@@ -1,0 +1,15 @@
+BLE001
+BM25
+FAISS
+FTS5
+HuggingFace
+KnowledgeBase
+LanceDB
+Meilisearch
+Qdrant
+Qwen3
+Tantivy
+kb
+mcp
+noqa
+yaml

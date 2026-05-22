@@ -1,0 +1,40 @@
+knowledge_base_root: "%USERPROFILE%\\knowledges"
+
+paths:
+  documents_dir: "documents"
+  processed_dir: "processed"
+  logs_dir: "logs"
+  documents_data: "index\\documents.csv"
+  database_data: "index\\database.sqlite"
+  fulltext_index_dir: "index\\fulltext"
+  vector_index_dir: "index\\vector"
+
+engines:
+  fulltext: "tantivy"
+  vector: "lancedb"
+
+chunking:
+  max_chars: 1200
+  overlap_chars: 150
+  version: "chunking-v1"
+
+embedding:
+  provider: "local"
+  # Default: Qwen3-Embedding-0.6B (1024-dim). Upgrade paths:
+  #   Qwen/Qwen3-Embedding-4B  -> dimension: 2560
+  #   Qwen/Qwen3-Embedding-8B  -> dimension: 4096
+  model: "Qwen/Qwen3-Embedding-0.6B"
+  dimension: 1024
+  # Optional encode-time options forwarded to sentence-transformers.
+  normalize: true
+  query_prompt_name: "query"
+
+converter:
+  version: "converter-v1"
+  options:
+    docx_keep_styles: false
+    pdf_layout_mode: "text"
+
+mcp:
+  enable_maintenance_tools: false
+  default_search_mode: "hybrid"

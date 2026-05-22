@@ -1,0 +1,58 @@
+[project]
+name = "knowledges"
+version = "0.1.0"
+description = "Local AI knowledge base MCP server with metadata, full-text (Tantivy) and vector (LanceDB) indexes."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Hui LIU" }]
+
+dependencies = [
+  # Core
+  "pyyaml>=6.0",
+  "click>=8.1",
+  "rich>=13.7",
+  # Document conversion
+  "markdownify>=0.11",
+  "python-docx>=1.1",
+  "pypdf>=4.0",
+  "python-pptx>=0.6",
+  "openpyxl>=3.1",
+  # Search engines
+  "tantivy>=0.21",
+  "jieba>=0.42",
+  "lancedb>=0.6",
+  "pyarrow>=15.0",
+  # Embeddings: Qwen3-Embedding-0.6B via sentence-transformers (>=3.0 required for Qwen3 model card)
+  "sentence-transformers>=3.0",
+  "torch>=2.1",
+  "transformers>=4.51",
+  # MCP server
+  "mcp>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.4",
+]
+
+[project.scripts]
+kb-scan = "tools.scan:main"
+kb-convert = "tools.convert:main"
+kb-ingest = "tools.ingest:main"
+kb-search = "tools.search:main"
+kb-metadata = "tools.metadata:main"
+kb-server = "server:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["services", "tools"]
+py-modules = ["server"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
