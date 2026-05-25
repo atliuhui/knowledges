@@ -385,9 +385,10 @@ kb.preview_metadata_update
 kb.apply_metadata_update
 kb.bulk_preview_metadata_update
 kb.bulk_apply_metadata_update
+kb.warmup
 ```
 
-其中查询类工具只读取索引、processed 文本和元数据；metadata 更新类工具只修改 `index\documents.csv` 中的人工维护字段，并且必须遵循“先 preview、再 apply”的确认流程。
+其中查询类工具只读取索引、processed 文本和元数据；metadata 更新类工具只修改 `index\documents.csv` 中的人工维护字段，并且必须遵循“先 preview、再 apply”的确认流程。`kb.warmup` 用于在执行 `kb.search` 等开销较大的工具前预热 Tantivy、LanceDB、jieba 和 Ollama embedding 模型，详见“冷启动与预热”一节。
 
 ### 维护工具
 
@@ -410,6 +411,50 @@ no_vector  # ingest 跳过向量索引
 ```
 
 这些工具会修改 `index\documents.csv`、`processed\` 或 `index\`，建议通过 `config.yaml` 中的 `mcp.enable_maintenance_tools` 控制，默认关闭。
+
+### 冷启动与预热
+
+MCP server 自身启动很快，但**第一次** `kb.search` / `kb.get_chunk` 会触发以下一次性开销：
+
+1. Ollama 第一次收到 embedding 请求时把模型权重装入 CPU/GPU（0.6B ≈ 1–3 秒，4B/8B 更久）；
+2. `lancedb` 与 `pyarrow` 首次 import；
+3. `jieba` 词典首次加载；
+4. Tantivy / LanceDB 索引首次打开。
+
+为避免 Agent 在用户面前出现可见的卡顿，可在一次会话开始时（或在批量调用 `kb.search` 之前）先调用 `kb.warmup` 工具：
+
+```json
+{
+  "name": "kb.warmup",
+  "arguments": {}
+}
+```
+
+返回示例：
+
+```json
+{
+  "ok": true,
+  "total_ms": 2143.5,
+  "stages": [
+    {"stage": "jieba",    "ok": true, "elapsed_ms": 320.1},
+    {"stage": "fulltext", "ok": true, "elapsed_ms": 95.6},
+    {"stage": "vector",   "ok": true, "elapsed_ms": 180.3, "dim": 1024},
+    {"stage": "embedder", "ok": true, "elapsed_ms": 1547.5, "model": "qwen3-embedding:0.6b", "vector_len": 1024, "keep_alive": null}
+  ]
+}
+```
+
+`kb.warmup` 是只读、幂等的；重复调用几乎零成本（embedder 实例和索引句柄都会在模块层缓存）。
+
+要让 Ollama 加载后的模型不被自动卸载，可在 `config.yaml` 中设置：
+
+```yaml
+embedding:
+  keep_alive: "24h"   # 或 -1 表示常驻
+```
+
+该值会随每次 embed 请求传给 Ollama，覆盖其默认的 5 分钟空闲卸载策略。
 
 ## Agent 驱动的 metadata 维护
 

@@ -326,6 +326,91 @@ def kb_bulk_apply_metadata_update(
     return bulk_apply(_cfg(), ids or [], BulkOperation(**(operation or {})))
 
 
+@mcp.tool(
+    name="kb.warmup",
+    description=(
+        "Pre-load expensive components (Tantivy index, LanceDB table, jieba "
+        "dictionary, and the Ollama embedding model) so that the next call to "
+        "kb.search / kb.get_chunk does not pay first-hit cold-start latency. "
+        "Safe to call repeatedly; subsequent calls are nearly free."
+    ),
+)
+@_safe
+def kb_warmup() -> dict[str, Any]:
+    import time
+
+    cfg = _cfg()
+    stages: list[dict[str, Any]] = []
+
+    def _stage(name: str, fn):  # noqa: ANN001
+        t0 = time.perf_counter()
+        try:
+            detail = fn() or {}
+            stages.append({
+                "stage": name,
+                "ok": True,
+                "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1),
+                **detail,
+            })
+        except Exception as e:  # noqa: BLE001
+            LOG.exception("warmup stage %s failed", name)
+            stages.append({
+                "stage": name,
+                "ok": False,
+                "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1),
+                "error": str(e),
+                "type": type(e).__name__,
+            })
+
+    def _warm_jieba():
+        from services.fulltext_tantivy import _tokenize_for_query  # type: ignore
+        # Force jieba's lazy dictionary load.
+        _tokenize_for_query("预热 warmup")
+        return {}
+
+    def _warm_fulltext():
+        from services.fulltext_tantivy import FullTextIndex
+        ft = FullTextIndex(cfg.fulltext_index_dir)
+        # Hit the searcher once so Tantivy mmaps and parses schema.
+        try:
+            ft.search("warmup", limit=1)
+        except Exception:  # noqa: BLE001
+            # Empty index is fine for warmup.
+            pass
+        return {}
+
+    def _warm_vector():
+        from services.vector_lancedb import VectorIndex
+        VectorIndex(cfg.vector_index_dir, dim=cfg.embedding.dimension)
+        return {"dim": cfg.embedding.dimension}
+
+    def _warm_embedder():
+        # Re-use the hybrid_search module cache so the very next kb.search
+        # query reuses the same OllamaEmbedder instance.
+        from services import hybrid_search as hs
+        from services.embeddings import OllamaEmbedder
+
+        embedder = getattr(hs, "_EMBEDDER", None)
+        if embedder is None:
+            embedder = OllamaEmbedder(cfg.embedding)
+            hs._EMBEDDER = embedder  # type: ignore[attr-defined]
+        vec = embedder.embed_query("warmup")
+        return {
+            "model": cfg.embedding.model,
+            "vector_len": len(vec),
+            "keep_alive": cfg.embedding.keep_alive,
+        }
+
+    _stage("jieba", _warm_jieba)
+    _stage("fulltext", _warm_fulltext)
+    _stage("vector", _warm_vector)
+    _stage("embedder", _warm_embedder)
+
+    ok = all(s["ok"] for s in stages)
+    total_ms = round(sum(s["elapsed_ms"] for s in stages), 1)
+    return {"ok": ok, "total_ms": total_ms, "stages": stages}
+
+
 # ---------- Maintenance tools (registered conditionally in main) ----------
 
 def _run_tool_script(script: str, extra_args: list[str] | None = None) -> dict[str, Any]:

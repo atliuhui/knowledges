@@ -32,6 +32,9 @@ embedding:
   # Optional Ollama endpoint. Leave null to use the default (127.0.0.1:11434
   # or the OLLAMA_HOST environment variable).
   host: null
+  # Forwarded to Ollama's `keep_alive`. Use e.g. "24h" or -1 to pin the model
+  # in memory across calls, or null to use Ollama's default (5 minutes).
+  keep_alive: -1
 
 converter:
   version: "converter-v1"

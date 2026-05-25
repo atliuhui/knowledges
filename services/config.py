@@ -37,6 +37,9 @@ class EmbeddingConfig:
     dimension: int = 1024
     normalize: bool = True
     host: str | None = None
+    # Forwarded to Ollama's `keep_alive`; e.g. "30m", "24h", or -1 to keep the
+    # model resident indefinitely. None uses Ollama's default (5 minutes).
+    keep_alive: str | int | None = None
 
 
 @dataclass

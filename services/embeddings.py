@@ -39,15 +39,22 @@ class OllamaEmbedder:
 
         self._model = cfg.model
         self._normalize = cfg.normalize
+        self._keep_alive = cfg.keep_alive
         self._client = (
             ollama.Client(host=cfg.host) if cfg.host else ollama.Client()
         )
 
+    def _embed_raw(self, texts: list[str]) -> list[list[float]]:
+        kwargs: dict[str, object] = {"model": self._model, "input": texts}
+        if self._keep_alive is not None:
+            kwargs["keep_alive"] = self._keep_alive
+        resp = self._client.embed(**kwargs)
+        return list(resp["embeddings"])
+
     def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
         if not texts:
             return []
-        resp = self._client.embed(model=self._model, input=list(texts))
-        vecs = list(resp["embeddings"])
+        vecs = self._embed_raw(list(texts))
         if self._normalize:
             vecs = [_l2_normalize(v) for v in vecs]
         return [[float(x) for x in v] for v in vecs]
