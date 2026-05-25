@@ -32,7 +32,7 @@ if (-not (Test-Path $pythonExe)) {
 #   - observing startup cost / per-stage timings
 #   - keeping the Ollama model resident (keep_alive) and warming OS page cache
 $pyScript = @'
-import json, os, sys
+import json, os, sys, time
 from services.config import load_config
 import server
 
@@ -43,9 +43,28 @@ server._CFG = load_config(
     knowledge_base_root_override=kb_root,
 )
 server._CFG.ensure_dirs()
-result = server.kb_warmup()
-print(json.dumps(result, ensure_ascii=False, indent=2))
-sys.exit(0 if result.get('ok') else 1)
+start = server.kb_warmup(refresh=True)
+print(json.dumps(start, ensure_ascii=False, indent=2))
+
+if not start.get('ok'):
+    sys.exit(1)
+
+deadline = time.time() + 1800  # 30 minutes max wait
+while True:
+    status = server.kb_warmup_status()
+    state = status.get('status')
+    if state in ('succeeded', 'failed'):
+        print(json.dumps(status, ensure_ascii=False, indent=2))
+        sys.exit(0 if status.get('ok') else 1)
+    if time.time() > deadline:
+        print(json.dumps({
+            'ok': False,
+            'error': 'warmup timeout',
+            'status': state,
+            'run_id': status.get('run_id'),
+        }, ensure_ascii=False, indent=2))
+        sys.exit(1)
+    time.sleep(0.5)
 '@
 
 if ($Config) { $env:KB_WARMUP_CONFIG = $Config } else { Remove-Item Env:KB_WARMUP_CONFIG -ErrorAction SilentlyContinue }
