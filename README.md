@@ -105,12 +105,14 @@ chunking:
   version: "chunking-v1"
 
 embedding:
-  provider: "local"
+  # 通过本地 Ollama 服务做 embedding，运行 `ollama serve` 并预先 `ollama pull qwen3-embedding:0.6b`
+  provider: "ollama"
   # Qwen3-Embedding 系列，默认 0.6B；后续可升级到 4B 或 8B
-  model: "Qwen/Qwen3-Embedding-0.6B"
+  model: "qwen3-embedding:0.6b"
   dimension: 1024
   normalize: true
-  query_prompt_name: "query"
+  # Ollama 服务端点；留空则使用默认 http://127.0.0.1:11434 或 OLLAMA_HOST 环境变量
+  host: null
 
 mcp:
   enable_maintenance_tools: false
@@ -244,63 +246,47 @@ processed_hash
 
 ### Embedding 模型选型
 
-向量索引使用 [sentence-transformers](https://www.sbert.net/) 加载本地 embedding 模型。默认使用 **Qwen3-Embedding-0.6B**，后续可按需升级到更大规模的同系列模型：
+向量索引通过本地 [Ollama](https://ollama.com/) 服务调用 embedding 模型，Python 侧只保留轻量的 `ollama` 客户端，不再依赖 `sentence-transformers` 与 `torch`。默认使用 **Qwen3-Embedding-0.6B**，后续可按需升级到更大规模的同系列模型：
 
-| 模型 | 向量维度 | 适用场景 |
+| Ollama 模型标签 | 向量维度 | 适用场景 |
 |---|---|---|
-| `Qwen/Qwen3-Embedding-0.6B`（默认） | 1024 | 本地开发、笔记本、CPU 或入门 GPU |
-| `Qwen/Qwen3-Embedding-4B` | 2560 | 中等规模知识库，需要更强语义召回 |
-| `Qwen/Qwen3-Embedding-8B` | 4096 | 大规模知识库，对召回精度要求最高 |
+| `qwen3-embedding:0.6b`（默认） | 1024 | 本地开发、笔记本、CPU 或入门 GPU |
+| `qwen3-embedding:4b` | 2560 | 中等规模知识库，需要更强语义召回 |
+| `qwen3-embedding:8b` | 4096 | 大规模知识库，对召回精度要求最高 |
 
-升级方式：修改 `config.yaml` 中的 `embedding.model` 与 `embedding.dimension`，然后执行 `python .\tools\ingest.py --force` 重建向量索引。
+升级方式：修改 `config.yaml` 中的 `embedding.model` 与 `embedding.dimension`，然后执行 `python -m tools.ingest --force` 重建向量索引。
 
-Qwen3-Embedding 是指令调优的模型，查询和文档应使用不同的编码方式：
+要点：
 
-1. 文档（chunk）入库时按普通文本编码，由 `ingest.py` 在 `embedder.encode(texts, ...)` 中完成。
-2. 查询时使用 `query` prompt，由 `services\hybrid_search.py` 在 `model.encode([text], prompt_name="query", ...)` 中完成，对应 `config.yaml` 中的 `embedding.query_prompt_name`。
-3. 默认开启 L2 归一化（`embedding.normalize: true`），与 LanceDB 默认的距离函数兼容。
+1. 文档（chunk）入库时按普通文本编码，由 `ingest.py` 调用 `OllamaEmbedder.embed_documents(texts)` 完成。
+2. 查询时调用 `OllamaEmbedder.embed_query(text)`，Qwen3-Embedding 的查询指令模板由 Ollama 模型文件内置，无需在客户端再传 `prompt_name`。
+3. 默认开启客户端 L2 归一化（`embedding.normalize: true`），与 LanceDB 默认的距离函数兼容。
 
-切换到非 Qwen 系列（例如 `bge-m3`、`bge-large-zh`）时，可将 `query_prompt_name` 留空，并相应调整 `dimension`。
+切换到非 Qwen 系列（例如 Ollama 上的 `bge-m3`、`nomic-embed-text` 等）时，只需把 `model` 改成对应的 Ollama 标签，并按模型实际维度调整 `dimension`。
 
-#### 模型下载
+#### 启动 Ollama 与拉取模型
 
-模型权重从 HuggingFace Hub 拉取并缓存到本地。`sentence-transformers` 依赖中已包含官方的 `huggingface_hub` CLI，推荐直接用它预下载：
+先安装并启动 [Ollama](https://ollama.com/download)，确保 `ollama serve` 在后台运行（Windows 桌面版默认会以服务方式启动）。
 
 ```powershell
-hf download Qwen/Qwen3-Embedding-0.6B
+# 拉取默认模型
+ollama pull qwen3-embedding:0.6b
 
-# 升级到更大的模型时同样预下载
-hf download Qwen/Qwen3-Embedding-4B
+# 升级到更大的模型
+ollama pull qwen3-embedding:4b
 
-# 只下载到指定本地目录（适合离线打包）
-hf download Qwen/Qwen3-Embedding-0.6B `
-  --local-dir D:\models\Qwen3-Embedding-0.6B
-
-# Gated / 私有模型需先登录
-hf login
+# 验证服务可用
+ollama list
 ```
 
-如果跳过预下载，首次 `ingest.py` 或 vector/hybrid 检索时也会被 `SentenceTransformer(cfg.embedding.model)` 隐式触发下载，仅耗时、需要网络。
+如需把 Ollama 部署到另一台机器或自定义端口，可通过以下方式配置：
 
-升级模型时记得同步修改 `config.yaml` 中的 `embedding.model` 和 `embedding.dimension`，然后跑 `python .\tools\ingest.py --force` 重建向量索引。
-
-缓存位置（按优先级）：
-
-```text
-SENTENCE_TRANSFORMERS_HOME > HF_HUB_CACHE > HF_HOME > %USERPROFILE%\.cache\huggingface\hub
-```
-
-常用环境变量：
-
-| 变量 | 用途 |
+| 配置方式 | 说明 |
 |---|---|
-| `HF_HOME` | HuggingFace 整体缓存根目录 |
-| `HF_HUB_CACHE` | 仅模型/数据仓库缓存路径 |
-| `SENTENCE_TRANSFORMERS_HOME` | sentence-transformers 的独立缓存路径 |
-| `HF_ENDPOINT` | 镜像站点，例如 `https://hf-mirror.com` |
-| `HF_HUB_OFFLINE=1` | 离线模式，强制只用本地缓存 |
+| `config.yaml` 中的 `embedding.host` | 显式指定，例如 `http://192.168.1.10:11434` |
+| 环境变量 `OLLAMA_HOST` | 客户端默认会读取（当 `host: null` 时） |
 
-离线/内网部署：在能访问网络的机器上 `hf download ... --local-dir <dir>` 拿到权重，拷到目标机同路径，再设 `HF_HUB_OFFLINE=1`。
+离线/内网部署：在能访问网络的机器上 `ollama pull <model>` 后，将 Ollama 的模型目录（默认 `%USERPROFILE%\.ollama\models`）拷贝到目标机器同路径即可。
 
 ## Python 工具职责
 
@@ -771,7 +757,7 @@ AI Agent 使用知识库时应遵守以下规则：
 首次初始化：
 
 ```powershell
-hf download Qwen/Qwen3-Embedding-0.6B
+ollama pull qwen3-embedding:0.6b
 python .\tools\scan.py
 python .\tools\convert.py
 python .\tools\ingest.py
@@ -863,7 +849,7 @@ python -m venv .venv
 ```sh
 pip install -e .
 
-hf download Qwen/Qwen3-Embedding-0.6B
+ollama pull qwen3-embedding:0.6b
 ```
 
 ```sh

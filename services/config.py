@@ -29,11 +29,14 @@ class ChunkingConfig:
 
 @dataclass
 class EmbeddingConfig:
-    provider: str = "local"
-    model: str = "Qwen/Qwen3-Embedding-0.6B"
+    # `provider` is informational; the only supported backend is a local
+    # Ollama server. `host` may be None to use the ollama client's default
+    # (http://127.0.0.1:11434 or the OLLAMA_HOST env var).
+    provider: str = "ollama"
+    model: str = "qwen3-embedding:0.6b"
     dimension: int = 1024
     normalize: bool = True
-    query_prompt_name: str | None = "query"
+    host: str | None = None
 
 
 @dataclass

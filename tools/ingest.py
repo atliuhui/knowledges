@@ -19,9 +19,9 @@ def _now() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
 
-def _load_embedder(model_name: str):  # type: ignore[no-untyped-def]
-    from sentence_transformers import SentenceTransformer  # type: ignore
-    return SentenceTransformer(model_name)
+def _load_embedder(cfg):  # type: ignore[no-untyped-def]
+    from services.embeddings import OllamaEmbedder
+    return OllamaEmbedder(cfg.embedding)
 
 
 @click.command()
@@ -83,7 +83,7 @@ def _run_ingest(cfg, log, *, force: bool, only: tuple[str, ...], no_vector: bool
         try:
             from services.vector_lancedb import VectorIndex, SCHEMA_VERSION as VEC_VERSION  # noqa: F401
             vec = VectorIndex(cfg.vector_index_dir, dim=cfg.embedding.dimension)
-            embedder = _load_embedder(cfg.embedding.model)
+            embedder = _load_embedder(cfg)
         except Exception as e:  # noqa: BLE001
             log.warning("vector backend unavailable, continuing fulltext only: %s", e)
             vec = None
@@ -170,12 +170,10 @@ def _run_ingest(cfg, log, *, force: bool, only: tuple[str, ...], no_vector: bool
                 if not texts:
                     embeddings = []
                 else:
-                    # Documents are encoded without the query prompt; that prompt is
-                    # only used at query time (see services.hybrid_search).
-                    embeddings = embedder.encode(
-                        texts,
-                        normalize_embeddings=cfg.embedding.normalize,
-                    )
+                    # Documents are encoded as plain passages. Qwen3-Embedding's
+                    # query-side instruction template is applied by the Ollama
+                    # model itself when we call embed_query at search time.
+                    embeddings = embedder.embed_documents(texts)
                 vec_payload = []
                 for c, emb in zip(chunks, embeddings):
                     vec_payload.append({

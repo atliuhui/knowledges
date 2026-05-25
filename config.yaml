@@ -19,15 +19,19 @@ chunking:
   version: "chunking-v1"
 
 embedding:
-  provider: "local"
+  # Embeddings are served by a local Ollama process. Start it via `ollama serve`
+  # and pull the model with `ollama pull qwen3-embedding:0.6b` before ingest.
+  provider: "ollama"
   # Default: Qwen3-Embedding-0.6B (1024-dim). Upgrade paths:
-  #   Qwen/Qwen3-Embedding-4B  -> dimension: 2560
-  #   Qwen/Qwen3-Embedding-8B  -> dimension: 4096
-  model: "Qwen/Qwen3-Embedding-0.6B"
+  #   qwen3-embedding:4b  -> dimension: 2560
+  #   qwen3-embedding:8b  -> dimension: 4096
+  model: "qwen3-embedding:0.6b"
   dimension: 1024
-  # Optional encode-time options forwarded to sentence-transformers.
+  # L2-normalize vectors client-side for stable cosine/L2 behavior in LanceDB.
   normalize: true
-  query_prompt_name: "query"
+  # Optional Ollama endpoint. Leave null to use the default (127.0.0.1:11434
+  # or the OLLAMA_HOST environment variable).
+  host: null
 
 converter:
   version: "converter-v1"

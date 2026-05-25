@@ -33,35 +33,20 @@ class SearchHit:
 
 
 def _embed(cfg: Config, text: str) -> list[float]:
-    """Embed a query using the configured local model. Lazy import.
+    """Embed a query using the configured local Ollama model. Lazy import.
 
-    For Qwen3-Embedding (and other instruction-tuned models), queries are
-    encoded with a `query` prompt so that they align with passage embeddings.
+    The query-side instruction template for Qwen3-Embedding is baked into the
+    Ollama model file, so we just call `embed_query`. The embedder instance is
+    cached on the module for repeated queries.
     """
+    global _EMBEDDER  # noqa: PLW0603
     try:
-        from sentence_transformers import SentenceTransformer  # type: ignore
-    except ImportError as e:
-        raise RuntimeError(
-            "sentence-transformers not installed; cannot run vector search."
-        ) from e
-    # Cache model on the module for repeated queries.
-    global _MODEL  # noqa: PLW0603
-    try:
-        model = _MODEL  # type: ignore[name-defined]
+        embedder = _EMBEDDER  # type: ignore[name-defined]
     except NameError:
-        model = SentenceTransformer(cfg.embedding.model)
-        _MODEL = model  # type: ignore[name-defined]
-    raw = cfg.embedding
-    encode_kwargs: dict[str, object] = {"normalize_embeddings": raw.normalize}
-    if raw.query_prompt_name:
-        try:
-            vec = model.encode([text], prompt_name=raw.query_prompt_name, **encode_kwargs)[0]
-        except (TypeError, ValueError):
-            # Model does not define this prompt; fall back to plain encoding.
-            vec = model.encode([text], **encode_kwargs)[0]
-    else:
-        vec = model.encode([text], **encode_kwargs)[0]
-    return [float(x) for x in vec]
+        from .embeddings import OllamaEmbedder
+        embedder = OllamaEmbedder(cfg.embedding)
+        _EMBEDDER = embedder  # type: ignore[name-defined]
+    return embedder.embed_query(text)
 
 
 def search(
