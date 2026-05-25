@@ -313,12 +313,28 @@ ollama list
 
 职责：
 
+格式对应关系（输入 -> 输出）：
+
+| 输入格式 | 输出格式 | 处理说明 |
+|---|---|---|
+| `.csv` | `.csv` | 规范化读取，UTF-8-SIG 兼容 |
+| `.docx` | `.md` | 提取正文与表格并转换为 Markdown |
+| `.yml` / `.yaml` | `.yml` / `.yaml` | 文本规范化，统一 UTF-8 编码 |
+| `.drawio` | `.md` | 提取图中可读文本并转换为 Markdown |
+| `.pdf` | `.md` | 按页提取文本并转换为 Markdown |
+| `.xmind` | `.md` | 提取主题结构并转换为 Markdown |
+| `.txt` | `.txt` | 文本规范化，统一 UTF-8 编码 |
+| `.md` / `.markdown` | `.md` / `.markdown` | 文本规范化，统一 UTF-8 编码 |
+| `.pptx` | `.md` | 提取幻灯片与备注并转换为 Markdown |
+| `.json` | `.json` | 文本规范化，统一 UTF-8 编码 |
+| `.xlsx` | `.csv` | 按工作表导出为 CSV |
+
 1. 读取 `index\documents.csv`。
 2. 跳过 `status = ignored` 或 `status = archived` 的文档。
 3. 查询 `index\database.sqlite` 中的历史转换状态。
 4. 根据 `source_hash`、`converter_version`、`convert_options` 生成 `convert_fingerprint`。
 5. 当 `convert_fingerprint` 变化或 `processed\` 文件缺失时，重新转换文档。
-6. 将 Word、PDF、PPT 等格式转换为 Markdown，将 Excel 转换为 CSV，将 TXT、YAML 等文本类文件规范化输出。
+6. 将 Word、PDF、PPT、Draw.io、XMind 等格式转换为 Markdown，将 Excel 转换为 CSV；TXT、YAML、JSON、Markdown 等文本类文件在保持原后缀的前提下做规范化并统一为 UTF-8 编码输出。
 7. 更新 `processed\` 文件。
 8. 更新 `index\database.sqlite` 中的转换状态、hash、路径和错误信息。
 

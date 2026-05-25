@@ -463,7 +463,9 @@ def kb_suggest_metadata(id: str) -> dict[str, Any]:
     for segment in path.split("/"):
         if "/" in segment:
             continue
-        if segment.endswith((".docx", ".pdf", ".pptx", ".md", ".xlsx", ".txt", ".csv")):
+        if segment.endswith((
+            ".docx", ".pdf", ".pptx", ".md", ".xlsx", ".txt", ".csv", ".drawio", ".xmind"
+        )):
             continue
         if segment and segment not in {"documents"}:
             suggested_tags.append(segment)

@@ -11,6 +11,7 @@ SUPPORTED_DOC_SUFFIXES = {
     ".md", ".markdown", ".txt", ".rst",
     ".docx", ".pdf", ".pptx",
     ".xlsx", ".csv", ".tsv",
+    ".drawio", ".xmind",
     ".yaml", ".yml", ".json",
 }
 
