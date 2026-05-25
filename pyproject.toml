@@ -25,6 +25,10 @@ dependencies = [
   "pyarrow>=15.0",
   # Embeddings: delegated to a local Ollama server (e.g. `qwen3-embedding:0.6b`).
   "ollama>=0.3",
+  # Image OCR (.png/.jpg/.jpeg -> .md) via RapidOCR (onnxruntime, cross-platform:
+  # Windows / Linux / macOS Intel & Apple Silicon). Defaults to PP-OCRv5 mobile.
+  "rapidocr>=2.0",
+  "onnxruntime>=1.17",
   # MCP server
   "mcp>=1.0",
 ]

@@ -90,7 +90,7 @@ def _run_convert(cfg, log, *, force: bool, only: tuple[str, ...]) -> None:
             continue
 
         try:
-            result = do_convert(src_abs)
+            result = do_convert(src_abs, cfg.converter.options or {})
         except ConversionError as e:
             log.error("FAIL %s id=%s err=%s", row.source_path, row.id, e)
             store.update(

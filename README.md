@@ -288,6 +288,41 @@ ollama list
 
 离线/内网部署：在能访问网络的机器上 `ollama pull <model>` 后，将 Ollama 的模型目录（默认 `%USERPROFILE%\.ollama\models`）拷贝到目标机器同路径即可。
 
+### 图片 OCR 模型选型
+
+`.png` / `.jpg` / `.jpeg` 走 `services\conversion.py` 中的 `_convert_image()`，底层调用 [RapidOCR](https://github.com/RapidAI/RapidOCR)。RapidOCR 使用与 PaddleOCR 同源的 PP-OCR 模型权重，但推理后端为 **onnxruntime**，是纯 Python wheel，全平台覆盖（Windows / Linux / macOS Intel & Apple Silicon），不需要 PaddlePaddle。
+
+默认使用 **PP-OCRv5 mobile** 组合（CPU 友好、ONNX 模型总计约 21 MB，覆盖简体/繁体中文 + 英文 + 日文）：
+
+| 阶段 | 默认模型 | 大小 | 控制字段（`converter.options.*`） |
+|---|---|---|---|
+| 文本检测 | `PP-OCRv5_mobile_det` | ~4.7 MB | `image_ocr_version` + `image_ocr_model_type` + `image_ocr_lang_det` |
+| 方向分类 | `ch_ppocr_mobile_v2.0_cls` | ~0.6 MB | RapidOCR 默认启用 |
+| 文本识别 | `PP-OCRv5_mobile_rec` | ~16 MB | `image_ocr_version` + `image_ocr_model_type` + `image_ocr_lang_rec` |
+
+可选取值：
+
+- `image_ocr_version`：`PP-OCRv5`、`PP-OCRv4`、`PP-OCRv3`。
+- `image_ocr_model_type`：`mobile`（CPU 推荐）、`server`（需更多内存/GPU）。
+- `image_ocr_lang_det`：检测阶段语言，通常 `ch`（适用中英、多语种）或 `en`。
+- `image_ocr_lang_rec`：识别阶段语言。v5 默认覆盖中英日繁；v3 下还可选 `japan`、`korean`、`chinese_cht`、`latin`、`arabic`、`cyrillic`、`devanagari` 等。
+
+更换任何字段会自动改变 `convert_fingerprint`，下一次 `kb-convert` 会重算受影响的图片。
+
+#### 预加载模型
+
+RapidOCR 随主依赖一起装好（`pip install -e .`），无需额外 extras。
+
+首次运行 `kb-convert` 时 RapidOCR 会按需下载 ONNX 模型到包内默认路径（`<site-packages>/rapidocr/models/`）或用户缓存目录。为了避免在第一张图上出现可见卡顿，可在安装后执行一次预加载，把检测/识别模型一次性拉到本地：
+
+```powershell
+python -c "from rapidocr import OCRVersion, ModelType, LangDet, LangRec, RapidOCR; RapidOCR(params={'Det.ocr_version':OCRVersion.PPOCRV5,'Det.model_type':ModelType.MOBILE,'Det.lang_type':LangDet.CH,'Rec.ocr_version':OCRVersion.PPOCRV5,'Rec.model_type':ModelType.MOBILE,'Rec.lang_type':LangRec.CH})"
+```
+
+该命令仅做模型下载与一次性初始化，不读取任何图片；之后 `kb-convert` 在 CPU 上的单张推理约 100–300 ms。
+
+离线/内网部署：在能访问网络的机器上跑一次上述预加载命令，再将所生成的 RapidOCR 模型目录（位于虚拟环境下 `Lib\site-packages\rapidocr\models\`）拷贝到目标机器同路径即可。
+
 ## Python 工具职责
 
 ### mcp_server\tools\scan.py
@@ -328,6 +363,7 @@ ollama list
 | `.pptx` | `.md` | 提取幻灯片与备注并转换为 Markdown |
 | `.json` | `.json` | 文本规范化，统一 UTF-8 编码 |
 | `.xlsx` | `.csv` | 按工作表导出为 CSV |
+| `.png` / `.jpg` / `.jpeg` | `.md` | 通过 RapidOCR（PP-OCRv5 mobile / ONNX）提取图中文本并写入 Markdown |
 
 1. 读取 `index\documents.csv`。
 2. 跳过 `status = ignored` 或 `status = archived` 的文档。
@@ -819,6 +855,9 @@ AI Agent 使用知识库时应遵守以下规则：
 
 ```powershell
 ollama pull qwen3-embedding:0.6b
+# 可选：如果 documents\ 中包含 .png/.jpg/.jpeg，可先预加载 RapidOCR 模型避免首张卡顿
+python -c "from rapidocr import OCRVersion, ModelType, LangDet, LangRec, RapidOCR; RapidOCR(params={'Det.ocr_version':OCRVersion.PPOCRV5,'Det.model_type':ModelType.MOBILE,'Det.lang_type':LangDet.CH,'Rec.ocr_version':OCRVersion.PPOCRV5,'Rec.model_type':ModelType.MOBILE,'Rec.lang_type':LangRec.CH})"
+
 python .\tools\scan.py
 python .\tools\convert.py
 python .\tools\ingest.py
@@ -911,6 +950,8 @@ python -m venv .venv
 pip install -e .
 
 ollama pull qwen3-embedding:0.6b
+
+python -c "from rapidocr import OCRVersion, ModelType, LangDet, LangRec, RapidOCR; RapidOCR(params={'Det.ocr_version':OCRVersion.PPOCRV5,'Det.model_type':ModelType.MOBILE,'Det.lang_type':LangDet.CH,'Rec.ocr_version':OCRVersion.PPOCRV5,'Rec.model_type':ModelType.MOBILE,'Rec.lang_type':LangRec.CH})"
 ```
 
 ```sh

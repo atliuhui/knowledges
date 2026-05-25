@@ -13,6 +13,7 @@ SUPPORTED_DOC_SUFFIXES = {
     ".xlsx", ".csv", ".tsv",
     ".drawio", ".xmind",
     ".yaml", ".yml", ".json",
+    ".png", ".jpg", ".jpeg",
 }
 
 
