@@ -16,6 +16,8 @@ Tool list:
     kb.apply_metadata_update
     kb.bulk_preview_metadata_update
     kb.bulk_apply_metadata_update
+    kb.warmup
+    kb.warmup_status
   Maintenance (optional):
     kb.scan
     kb.convert
@@ -30,6 +32,8 @@ import functools
 import logging
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -85,6 +89,198 @@ def _safe(fn):
 # ---------- FastMCP instance ----------
 
 mcp = FastMCP("knowledgebase")
+
+_WARMUP_LOCK = threading.Lock()
+_WARMUP_THREAD: threading.Thread | None = None
+_WARMUP_STATE: dict[str, Any] = {
+    "status": "idle",
+    "run_id": 0,
+    "started_at_ms": None,
+    "finished_at_ms": None,
+    "updated_at_ms": None,
+    "current_stage": None,
+    "completed_stages": 0,
+    "total_stages": 4,
+    "progress_pct": 0.0,
+    "ok": None,
+    "total_ms": 0.0,
+    "stages": [],
+}
+
+
+def _warmup_snapshot() -> dict[str, Any]:
+    with _WARMUP_LOCK:
+        return {
+            **_WARMUP_STATE,
+            "stages": [dict(s) for s in _WARMUP_STATE.get("stages", [])],
+        }
+
+
+def _is_ollama_model_loaded(cfg: Config) -> bool:
+    """Return True when the configured Ollama embedding model is currently loaded.
+
+    If this check fails for any reason, return False so `kb.warmup` can safely
+    trigger a fresh warmup run.
+    """
+    try:
+        import ollama  # type: ignore
+    except ImportError:
+        return False
+
+    try:
+        client = ollama.Client(host=cfg.embedding.host) if cfg.embedding.host else ollama.Client()
+        resp = client.ps()
+        models = resp.get("models", [])
+        target = str(cfg.embedding.model).strip().lower()
+        for item in models:
+            name = str(item.get("name", "")).strip().lower()
+            if name == target:
+                return True
+        return False
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _run_warmup_once(
+    cfg: Config,
+    on_stage_update=None,  # noqa: ANN001
+) -> dict[str, Any]:
+    stages: list[dict[str, Any]] = []
+
+    def _stage(name: str, fn):  # noqa: ANN001
+        if on_stage_update is not None:
+            on_stage_update(name, "started", None)
+        t0 = time.perf_counter()
+        try:
+            detail = fn() or {}
+            stage_result = {
+                "stage": name,
+                "ok": True,
+                "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1),
+                **detail,
+            }
+            stages.append(stage_result)
+            if on_stage_update is not None:
+                on_stage_update(name, "finished", stage_result)
+        except Exception as e:  # noqa: BLE001
+            LOG.exception("warmup stage %s failed", name)
+            stage_result = {
+                "stage": name,
+                "ok": False,
+                "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1),
+                "error": str(e),
+                "type": type(e).__name__,
+            }
+            stages.append(stage_result)
+            if on_stage_update is not None:
+                on_stage_update(name, "finished", stage_result)
+
+    def _warm_jieba():
+        from services.fulltext_tantivy import _tokenize_for_query  # type: ignore
+        # Force jieba's lazy dictionary load.
+        _tokenize_for_query("预热 warmup")
+        return {}
+
+    def _warm_fulltext():
+        from services.fulltext_tantivy import FullTextIndex
+        ft = FullTextIndex(cfg.fulltext_index_dir)
+        # Hit the searcher once so Tantivy mmaps and parses schema.
+        try:
+            ft.search("warmup", limit=1)
+        except Exception:  # noqa: BLE001
+            # Empty index is fine for warmup.
+            pass
+        return {}
+
+    def _warm_vector():
+        from services.vector_lancedb import VectorIndex
+        VectorIndex(cfg.vector_index_dir, dim=cfg.embedding.dimension)
+        return {"dim": cfg.embedding.dimension}
+
+    def _warm_embedder():
+        # Re-use the hybrid_search module cache so the very next kb.search
+        # query reuses the same OllamaEmbedder instance.
+        from services import hybrid_search as hs
+        from services.embeddings import OllamaEmbedder
+
+        embedder = getattr(hs, "_EMBEDDER", None)
+        if embedder is None:
+            embedder = OllamaEmbedder(cfg.embedding)
+            hs._EMBEDDER = embedder  # type: ignore[attr-defined]
+        vec = embedder.embed_query("warmup")
+        return {
+            "model": cfg.embedding.model,
+            "vector_len": len(vec),
+            "keep_alive": cfg.embedding.keep_alive,
+        }
+
+    _stage("jieba", _warm_jieba)
+    _stage("fulltext", _warm_fulltext)
+    _stage("vector", _warm_vector)
+    _stage("embedder", _warm_embedder)
+
+    ok = all(s["ok"] for s in stages)
+    total_ms = round(sum(s["elapsed_ms"] for s in stages), 1)
+    return {"ok": ok, "total_ms": total_ms, "stages": stages}
+
+
+def _warmup_worker(run_id: int) -> None:
+    global _WARMUP_THREAD
+
+    started_at_ms = round(time.time() * 1000, 1)
+
+    def _on_stage_update(stage_name: str, event: str, stage_result: dict[str, Any] | None) -> None:
+        with _WARMUP_LOCK:
+            if _WARMUP_STATE.get("run_id") != run_id:
+                return
+            now_ms = round(time.time() * 1000, 1)
+            if event == "started":
+                _WARMUP_STATE["current_stage"] = stage_name
+                _WARMUP_STATE["updated_at_ms"] = now_ms
+            elif event == "finished" and stage_result is not None:
+                completed = int(_WARMUP_STATE.get("completed_stages", 0)) + 1
+                total = max(1, int(_WARMUP_STATE.get("total_stages", 4)))
+                _WARMUP_STATE["completed_stages"] = completed
+                _WARMUP_STATE["progress_pct"] = round((completed / total) * 100, 1)
+                _WARMUP_STATE["stages"] = [
+                    *_WARMUP_STATE.get("stages", []),
+                    stage_result,
+                ]
+                _WARMUP_STATE["updated_at_ms"] = now_ms
+
+    try:
+        result = _run_warmup_once(_cfg(), on_stage_update=_on_stage_update)
+    except Exception as e:  # noqa: BLE001
+        LOG.exception("warmup run %s crashed", run_id)
+        result = {
+            "ok": False,
+            "total_ms": 0.0,
+            "stages": [{
+                "stage": "internal",
+                "ok": False,
+                "elapsed_ms": 0.0,
+                "error": str(e),
+                "type": type(e).__name__,
+            }],
+        }
+
+    finished_at_ms = round(time.time() * 1000, 1)
+    with _WARMUP_LOCK:
+        _WARMUP_STATE.update({
+            "status": "succeeded" if result["ok"] else "failed",
+            "run_id": run_id,
+            "started_at_ms": started_at_ms,
+            "finished_at_ms": finished_at_ms,
+            "updated_at_ms": finished_at_ms,
+            "current_stage": None,
+            "completed_stages": len(result["stages"]),
+            "total_stages": len(result["stages"]) or 4,
+            "progress_pct": 100.0,
+            "ok": result["ok"],
+            "total_ms": result["total_ms"],
+            "stages": result["stages"],
+        })
+        _WARMUP_THREAD = None
 
 
 # ---------- Read-only tools ----------
@@ -329,86 +525,82 @@ def kb_bulk_apply_metadata_update(
 @mcp.tool(
     name="kb.warmup",
     description=(
-        "Pre-load expensive components (Tantivy index, LanceDB table, jieba "
-        "dictionary, and the Ollama embedding model) so that the next call to "
-        "kb.search / kb.get_chunk does not pay first-hit cold-start latency. "
-        "Safe to call repeatedly; subsequent calls are nearly free."
+        "Start a background warmup job that pre-loads expensive components "
+        "(Tantivy, LanceDB, jieba dictionary, and Ollama embeddings). Returns "
+        "immediately to avoid client timeout. Use kb.warmup_status to inspect "
+        "progress and stage results."
     ),
 )
 @_safe
-def kb_warmup() -> dict[str, Any]:
-    import time
+def kb_warmup(refresh: bool = False) -> dict[str, Any]:
+    global _WARMUP_THREAD
 
     cfg = _cfg()
-    stages: list[dict[str, Any]] = []
 
-    def _stage(name: str, fn):  # noqa: ANN001
-        t0 = time.perf_counter()
-        try:
-            detail = fn() or {}
-            stages.append({
-                "stage": name,
+    with _WARMUP_LOCK:
+        status = _WARMUP_STATE["status"]
+
+        if status == "running":
+            return {
                 "ok": True,
-                "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1),
-                **detail,
-            })
-        except Exception as e:  # noqa: BLE001
-            LOG.exception("warmup stage %s failed", name)
-            stages.append({
-                "stage": name,
-                "ok": False,
-                "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1),
-                "error": str(e),
-                "type": type(e).__name__,
-            })
+                "status": "running",
+                "run_id": _WARMUP_STATE["run_id"],
+                "started_at_ms": _WARMUP_STATE["started_at_ms"],
+                "message": "Warmup is already running. Use kb.warmup_status.",
+            }
 
-    def _warm_jieba():
-        from services.fulltext_tantivy import _tokenize_for_query  # type: ignore
-        # Force jieba's lazy dictionary load.
-        _tokenize_for_query("预热 warmup")
-        return {}
+        if status == "succeeded" and not refresh:
+            if _is_ollama_model_loaded(cfg):
+                return {
+                    "ok": True,
+                    "status": "succeeded",
+                    "cached": True,
+                    "run_id": _WARMUP_STATE["run_id"],
+                    "total_ms": _WARMUP_STATE["total_ms"],
+                    "stages": [dict(s) for s in _WARMUP_STATE.get("stages", [])],
+                    "message": "Warmup already completed. Pass refresh=true to run again.",
+                }
+            LOG.info("Warmup cache invalidated: Ollama model appears unloaded; restarting warmup.")
 
-    def _warm_fulltext():
-        from services.fulltext_tantivy import FullTextIndex
-        ft = FullTextIndex(cfg.fulltext_index_dir)
-        # Hit the searcher once so Tantivy mmaps and parses schema.
-        try:
-            ft.search("warmup", limit=1)
-        except Exception:  # noqa: BLE001
-            # Empty index is fine for warmup.
-            pass
-        return {}
+        run_id = int(_WARMUP_STATE.get("run_id", 0)) + 1
+        _WARMUP_STATE.update({
+            "status": "running",
+            "run_id": run_id,
+            "started_at_ms": round(time.time() * 1000, 1),
+            "finished_at_ms": None,
+            "updated_at_ms": round(time.time() * 1000, 1),
+            "current_stage": None,
+            "completed_stages": 0,
+            "total_stages": 4,
+            "progress_pct": 0.0,
+            "ok": None,
+            "total_ms": 0.0,
+            "stages": [],
+        })
 
-    def _warm_vector():
-        from services.vector_lancedb import VectorIndex
-        VectorIndex(cfg.vector_index_dir, dim=cfg.embedding.dimension)
-        return {"dim": cfg.embedding.dimension}
+        _WARMUP_THREAD = threading.Thread(
+            target=_warmup_worker,
+            args=(run_id,),
+            name=f"kb-warmup-{run_id}",
+            daemon=True,
+        )
+        _WARMUP_THREAD.start()
 
-    def _warm_embedder():
-        # Re-use the hybrid_search module cache so the very next kb.search
-        # query reuses the same OllamaEmbedder instance.
-        from services import hybrid_search as hs
-        from services.embeddings import OllamaEmbedder
+    return {
+        "ok": True,
+        "status": "started",
+        "run_id": run_id,
+        "message": "Warmup started in background. Use kb.warmup_status for results.",
+    }
 
-        embedder = getattr(hs, "_EMBEDDER", None)
-        if embedder is None:
-            embedder = OllamaEmbedder(cfg.embedding)
-            hs._EMBEDDER = embedder  # type: ignore[attr-defined]
-        vec = embedder.embed_query("warmup")
-        return {
-            "model": cfg.embedding.model,
-            "vector_len": len(vec),
-            "keep_alive": cfg.embedding.keep_alive,
-        }
 
-    _stage("jieba", _warm_jieba)
-    _stage("fulltext", _warm_fulltext)
-    _stage("vector", _warm_vector)
-    _stage("embedder", _warm_embedder)
-
-    ok = all(s["ok"] for s in stages)
-    total_ms = round(sum(s["elapsed_ms"] for s in stages), 1)
-    return {"ok": ok, "total_ms": total_ms, "stages": stages}
+@mcp.tool(
+    name="kb.warmup_status",
+    description="Get status/result for the latest background warmup run.",
+)
+@_safe
+def kb_warmup_status() -> dict[str, Any]:
+    return _warmup_snapshot()
 
 
 # ---------- Maintenance tools (registered conditionally in main) ----------

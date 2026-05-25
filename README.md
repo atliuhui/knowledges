@@ -909,4 +909,8 @@ python -m tools.search "MCF document"
 .\actions\run-pipeline.ps1
 ```
 
+```powershell
+npx @modelcontextprotocol/inspector .\.venv\Scripts\python.exe -m server
+```
+
 > **重要**：本项目所有 Python 代码（`tools\*.py`、`server.py`、`hf` 等）都必须在当前项目的 `.venv` 虚拟环境中运行，不要使用全局 Python。每次新开终端先执行 `.\.venv\Scripts\Activate.ps1` 激活环境，确认提示符前出现 `(.venv)` 后再运行任何命令；AI Agent 协助执行命令时也应遵循同样规则，避免污染全局环境或引入版本冲突。
