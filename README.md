@@ -288,6 +288,40 @@ ollama list
 
 离线/内网部署：在能访问网络的机器上 `ollama pull <model>` 后，将 Ollama 的模型目录（默认 `%USERPROFILE%\.ollama\models`）拷贝到目标机器同路径即可。
 
+#### 调整 Ollama 并行度（加速 `ingest`）
+
+`tools/ingest.py` 已改造为多文档并发处理（`config.yaml` 中 `ingest.concurrency`，默认 `4`；也可用 `kb-ingest --concurrency N` 临时覆盖）。但要真正吃到 embedding 并行，必须把 **Ollama 服务端**的并行度同步调大——默认值往往是 `OLLAMA_NUM_PARALLEL=1`，会把多线程请求串行化。
+
+先确认当前并行度：
+
+```powershell
+# Windows 默认日志位置（注意不是 logs\ 子目录）
+Get-Content "$env:LOCALAPPDATA\Ollama\server.log" `
+  | Select-String "OLLAMA_NUM_PARALLEL|OLLAMA_MAX_LOADED" `
+  | Select-Object -Last 3
+```
+
+输出里若看到 `OLLAMA_NUM_PARALLEL:1`，按下面步骤调高（推荐 4，与本仓库 ingest 默认 concurrency 对齐）：
+
+```powershell
+# 1) 写入用户级环境变量（持久生效）
+setx OLLAMA_NUM_PARALLEL 4
+setx OLLAMA_MAX_LOADED_MODELS 2   # 可选：允许同时常驻多个模型（如 embed + LLM）
+
+# 2) 完全关闭 Ollama（托盘 Quit；或强杀进程）
+Get-Process ollama* -ErrorAction SilentlyContinue | Stop-Process -Force
+
+# 3) 重新启动 Ollama（点桌面/托盘图标，或命令行 `ollama serve`）
+#    setx 设置的变量只对此后启动的新进程生效
+
+# 4) 验证已生效
+Get-Content "$env:LOCALAPPDATA\Ollama\server.log" -Tail 80 `
+  | Select-String "cls|OLLAMA_MAX_LOADED"
+# 期望看到： OLLAMA_NUM_PARALLEL:4   OLLAMA_MAX_LOADED_MODELS:2
+```
+
+并行度对资源占用的影响：每个并行槽位会按 `Parallel × KvSize` 单独分配 KV cache（embedding 模型很小，4 路并行基本无压力；若改用 4B/8B 的 LLM，需根据显存酌情下调）。`OLLAMA_MAX_LOADED_MODELS` 决定同时常驻的模型数，配合 `embedding.keep_alive: -1` 可让 embed 模型常驻、避免冷启动。
+
 ### 图片 OCR 模型选型
 
 `.png` / `.jpg` / `.jpeg` 走 `services\conversion.py` 中的 `_convert_image()`，底层调用 [RapidOCR](https://github.com/RapidAI/RapidOCR)。RapidOCR 使用与 PaddleOCR 同源的 PP-OCR 模型权重，但推理后端为 **onnxruntime**，是纯 Python wheel，全平台覆盖（Windows / Linux / macOS Intel & Apple Silicon），不需要 PaddlePaddle。

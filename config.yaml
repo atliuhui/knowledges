@@ -57,3 +57,10 @@ converter:
 mcp:
   enable_maintenance_tools: false
   default_search_mode: "hybrid"
+
+ingest:
+  # Documents are processed sequentially. Within a single document, this many
+  # parallel embedding requests are fanned out to the local Ollama server
+  # (chunks are sharded across these workers). Tune together with
+  # OLLAMA_NUM_PARALLEL (default 4) on the Ollama side.
+  concurrency: 4

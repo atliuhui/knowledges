@@ -49,6 +49,14 @@ class ConverterConfig:
 
 
 @dataclass
+class IngestConfig:
+    # Documents are ingested sequentially. Within a single document, this many
+    # parallel embedding requests are fanned out to the Ollama server (chunks
+    # are split into N shards). Tune this together with OLLAMA_NUM_PARALLEL.
+    concurrency: int = 4
+
+
+@dataclass
 class MCPConfig:
     enable_maintenance_tools: bool = False
     default_search_mode: str = "hybrid"
@@ -69,6 +77,7 @@ class Config:
     chunking: ChunkingConfig
     embedding: EmbeddingConfig
     converter: ConverterConfig
+    ingest: IngestConfig
     mcp: MCPConfig
     raw: dict[str, Any]
 
@@ -120,6 +129,7 @@ def load_config(
     chunking_raw = data.get("chunking", {}) or {}
     embedding_raw = data.get("embedding", {}) or {}
     converter_raw = data.get("converter", {}) or {}
+    ingest_raw = data.get("ingest", {}) or {}
     mcp_raw = data.get("mcp", {}) or {}
 
     return Config(
@@ -136,6 +146,7 @@ def load_config(
         chunking=ChunkingConfig(**chunking_raw) if chunking_raw else ChunkingConfig(),
         embedding=EmbeddingConfig(**embedding_raw) if embedding_raw else EmbeddingConfig(),
         converter=ConverterConfig(**converter_raw) if converter_raw else ConverterConfig(),
+        ingest=IngestConfig(**ingest_raw) if ingest_raw else IngestConfig(),
         mcp=MCPConfig(**mcp_raw) if mcp_raw else MCPConfig(),
         raw=data,
     )
