@@ -1,4 +1,4 @@
-"""KnowledgeBase MCP Server entry point (FastMCP edition).
+"""Knowledges MCP Server entry point (FastMCP edition).
 
 Exposes read-only tools by default. Maintenance tools (scan/convert/ingest/rebuild)
 are gated behind `mcp.enable_maintenance_tools` in config.yaml.
@@ -11,6 +11,9 @@ Tool list:
     kb.get_metadata
     kb.list_documents
     kb.list_tags
+    kb.list_data_tables
+    kb.read_data_table
+    kb.query_data
     kb.suggest_metadata
     kb.preview_metadata_update
     kb.apply_metadata_update
@@ -29,6 +32,7 @@ Tool list:
 from __future__ import annotations
 
 import functools
+import json
 import logging
 import subprocess
 import sys
@@ -46,6 +50,7 @@ except ImportError as e:  # pragma: no cover
 
 from services import metadata as md
 from services.config import Config, load_config
+from services.data_query import DataQueryError, read_table_rows, run_query
 from services.hybrid_search import search as hybrid_search
 from services.metadata_editing import (
     BulkOperation,
@@ -88,7 +93,7 @@ def _safe(fn):
 
 # ---------- FastMCP instance ----------
 
-mcp = FastMCP("knowledgebase")
+mcp = FastMCP("knowledges")
 
 _WARMUP_LOCK = threading.Lock()
 _WARMUP_THREAD: threading.Thread | None = None
@@ -178,7 +183,7 @@ def _run_warmup_once(
     def _warm_jieba():
         from services.fulltext_tantivy import _tokenize_for_query  # type: ignore
         # Force jieba's lazy dictionary load.
-        _tokenize_for_query("预热 warmup")
+        _tokenize_for_query("棰勭儹 warmup")
         return {}
 
     def _warm_fulltext():
@@ -304,11 +309,11 @@ def kb_search(query: str, mode: str | None = None, limit: int = 10) -> dict[str,
 @_safe
 def kb_get_document(id: str) -> dict[str, Any]:
     cfg = _cfg()
-    rows = md.load_csv(cfg.documents_data)
+    rows = md.load_csv(cfg.docs_data)
     row = next((r for r in rows if r.id == id), None)
     if not row:
         raise ValueError(f"document not found: {id}")
-    store = Database(cfg.database_data)
+    store = Database(cfg.db_data)
     rec = store.get(id)
     text = ""
     if rec and rec.processed_path:
@@ -338,7 +343,7 @@ def kb_get_chunk(doc_id: str, chunk_id: str) -> dict[str, Any]:
     from services.chunking import chunk_text
 
     cfg = _cfg()
-    store = Database(cfg.database_data)
+    store = Database(cfg.db_data)
     rec = store.get(doc_id)
     if not rec or not rec.processed_path:
         raise ValueError(f"document not converted: {doc_id}")
@@ -360,11 +365,11 @@ def kb_get_chunk(doc_id: str, chunk_id: str) -> dict[str, Any]:
 @_safe
 def kb_get_metadata(id: str) -> dict[str, Any]:
     cfg = _cfg()
-    rows = md.load_csv(cfg.documents_data)
+    rows = md.load_csv(cfg.docs_data)
     row = next((r for r in rows if r.id == id), None)
     if not row:
         raise ValueError(f"document not found: {id}")
-    store = Database(cfg.database_data)
+    store = Database(cfg.db_data)
     rec = store.get(id)
     return {
         "csv": {k: getattr(row, k) for k in md.FIELDS},
@@ -383,7 +388,7 @@ def kb_list_documents(
     offset: int = 0,
 ) -> dict[str, Any]:
     cfg = _cfg()
-    rows = md.load_csv(cfg.documents_data)
+    rows = md.load_csv(cfg.docs_data)
     flt = filter or {}
     if "status" in flt:
         rows = [r for r in rows if r.status in set(flt["status"])]
@@ -424,7 +429,7 @@ def kb_list_documents(
 @_safe
 def kb_list_tags() -> dict[str, Any]:
     cfg = _cfg()
-    rows = md.load_csv(cfg.documents_data)
+    rows = md.load_csv(cfg.docs_data)
     counts: dict[str, int] = {}
     for r in rows:
         for t in r.tag_list():
@@ -438,13 +443,96 @@ def kb_list_tags() -> dict[str, Any]:
 
 
 @mcp.tool(
+    name="kb.list_data_tables",
+    description=(
+        "List Parquet-backed data tables in the knowledge base. Optionally "
+        "filter by doc_id. Each entry includes table_name, source document, "
+        "parquet path (relative to kb_root), columns and row_count."
+    ),
+)
+@_safe
+def kb_list_data_tables(doc_id: str | None = None) -> dict[str, Any]:
+    cfg = _cfg()
+    store = Database(cfg.db_data)
+    rows = store.list_data_tables(doc_id=doc_id)
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        try:
+            cols = json.loads(r.get("columns_json") or "[]")
+        except Exception:  # noqa: BLE001
+            cols = []
+        out.append({
+            "table_name": r.get("table_name"),
+            "doc_id": r.get("doc_id"),
+            "source_path": r.get("source_path"),
+            "sheet": r.get("sheet"),
+            "parquet_path": r.get("parquet_path"),
+            "columns": cols,
+            "row_count": r.get("row_count"),
+            "pipeline_version": r.get("pipeline_version"),
+            "created_at": r.get("created_at"),
+        })
+    return {"data_tables": out, "count": len(out)}
+
+
+@mcp.tool(
+    name="kb.read_data_table",
+    description=(
+        "Read a page of rows from a registered data table by table_name. "
+        "Returns column names and row dicts. Default limit=50, max 1000."
+    ),
+)
+@_safe
+def kb_read_data_table(
+    table_name: str,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
+    cfg = _cfg()
+    if limit <= 0 or limit > 1000:
+        raise ValueError("limit must be in 1..1000")
+    if offset < 0:
+        raise ValueError("offset must be >= 0")
+    store = Database(cfg.db_data)
+    row = store.get_data_table(table_name)
+    if not row:
+        raise ValueError(f"data table not found: {table_name}")
+    return read_table_rows(
+        cfg.knowledge_base_root, row, limit=limit, offset=offset,
+    )
+
+
+@mcp.tool(
+    name="kb.query_data",
+    description=(
+        "Run a read-only SELECT/WITH SQL query over the registered Parquet "
+        "data tables (each registered row exposed as a DuckDB view named by "
+        "table_name). Only one statement is permitted; mutation/extension "
+        "keywords are rejected. A LIMIT cap is applied when the user query "
+        "does not contain LIMIT."
+    ),
+)
+@_safe
+def kb_query_data(sql: str, limit: int = 1000) -> dict[str, Any]:
+    cfg = _cfg()
+    if limit <= 0 or limit > 10000:
+        raise ValueError("limit must be in 1..10000")
+    store = Database(cfg.db_data)
+    rows = store.list_data_tables()
+    try:
+        return run_query(cfg.knowledge_base_root, rows, sql, hard_cap=limit)
+    except DataQueryError as e:
+        return {"error": str(e), "type": "DataQueryError"}
+
+
+@mcp.tool(
     name="kb.suggest_metadata",
     description="Suggest document fields (heuristic).",
 )
 @_safe
 def kb_suggest_metadata(id: str) -> dict[str, Any]:
     cfg = _cfg()
-    rows = md.load_csv(cfg.documents_data)
+    rows = md.load_csv(cfg.docs_data)
     row = next((r for r in rows if r.id == id), None)
     if not row:
         raise ValueError(f"document not found: {id}")
@@ -522,6 +610,42 @@ def kb_bulk_apply_metadata_update(
     operation: dict[str, Any],
 ) -> dict[str, Any]:
     return bulk_apply(_cfg(), ids or [], BulkOperation(**(operation or {})))
+
+
+# ---------- H5 offline apps lane ----------
+
+from services import apps as apps_svc  # noqa: E402  (kept near related tools)
+
+
+@mcp.tool(
+    name="kb.create_app",
+    description=(
+        "Create or overwrite an HTML5 offline app under <kb_root>/apps/<slug>/. "
+        "`files` maps relative POSIX paths (e.g. 'index.html', 'js/app.js') to "
+        "text content. Returns the local URL served by miniserve so the agent "
+        "can advertise a clickable link in chat. Slug must match [a-z0-9][a-z0-9-]*."
+    ),
+)
+@_safe
+def kb_create_app(
+    slug: str,
+    files: dict[str, str],
+    overwrite: bool = False,
+) -> dict[str, Any]:
+    result = apps_svc.create_app(_cfg(), slug, files, overwrite=overwrite)
+    return result.to_dict()
+
+
+@mcp.tool(
+    name="kb.list_apps",
+    description=(
+        "List H5 offline apps stored under <kb_root>/apps/. Each entry includes "
+        "the slug, local URL, on-disk path, file count and total size."
+    ),
+)
+@_safe
+def kb_list_apps() -> dict[str, Any]:
+    return {"apps": apps_svc.list_apps(_cfg())}
 
 
 @mcp.tool(
@@ -678,12 +802,12 @@ def _register_maintenance_tools() -> None:
     mcp.add_tool(
         kb_scan,
         name="kb.scan",
-        description="Run tools.scan to refresh index/documents.csv.",
+        description="Run tools.scan to refresh store/docs.csv.",
     )
     mcp.add_tool(
         kb_convert,
         name="kb.convert",
-        description="Run tools.convert to refresh processed/ and runtime metadata.",
+        description="Run tools.convert to refresh text/ and runtime metadata.",
     )
     mcp.add_tool(
         kb_ingest,
@@ -715,7 +839,7 @@ def main() -> None:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s :: %(message)s",
     )
-    LOG.info("KnowledgeBase MCP server starting (kb_root=%s)", _CFG.knowledge_base_root)
+    LOG.info("Knowledges MCP server starting (kb_root=%s)", _CFG.knowledge_base_root)
 
     if _CFG.mcp.enable_maintenance_tools:
         _register_maintenance_tools()

@@ -1,13 +1,25 @@
 knowledge_base_root: "%USERPROFILE%\\knowledges"
 
 paths:
-  documents_dir: "documents"
-  processed_dir: "processed"
+  docs_dir: "docs"
+  text_dir: "text"
+  data_dir: "data"
   logs_dir: "logs"
-  documents_data: "index\\documents.csv"
-  database_data: "index\\database.sqlite"
-  fulltext_index_dir: "index\\fulltext"
-  vector_index_dir: "index\\vector"
+  apps_dir: "apps"
+  docs_data: "store\\docs.csv"
+  db_data: "store\\db.sqlite"
+  fulltext_index_dir: "store\\fulltext"
+  vector_index_dir: "store\\vector"
+
+apps:
+  # Loopback HTTP server (miniserve) hosting agent-generated H5 offline apps
+  # under <knowledge_base_root>\apps\<slug>\. Start with
+  # `.\actions\start-apps-server.ps1` after running `download-miniserve.ps1`.
+  host: "127.0.0.1"
+  port: 8788
+  # Base URL advertised by kb.create_app / kb.list_apps in chat cards.
+  # Leave null to derive from `http://{host}:{port}` automatically.
+  base_url: null
 
 engines:
   fulltext: "tantivy"
@@ -36,27 +48,57 @@ embedding:
   # in memory across calls, or null to use Ollama's default (5 minutes).
   keep_alive: -1
 
-converter:
-  version: "converter-v1"
-  options:
-    docx_keep_styles: false
-    pdf_layout_mode: "text"
-    # ---- Image OCR (.png/.jpg/.jpeg) via RapidOCR ----
-    # Cross-platform OCR (Windows / Linux / macOS Intel & Apple Silicon),
-    # backed by onnxruntime. Install deps: pip install -e .[ocr]
-    # Default stack: PP-OCRv5 mobile (CPU-friendly, ~21 MB total models),
-    # covers simplified/traditional Chinese + English + Japanese.
-    image_ocr_version: "PP-OCRv5"     # PP-OCRv5 / PP-OCRv4 / PP-OCRv3
-    image_ocr_model_type: "mobile"    # mobile / server
-    # Language tags applied to det/rec models separately. Common rec values:
-    # "ch" (中英), "en", "japan", "korean", "chinese_cht", "latin",
-    # "arabic", "cyrillic", "devanagari". Det usually stays "ch" or "en".
-    image_ocr_lang_det: "ch"
-    image_ocr_lang_rec: "ch"
+text_pipeline:
+  # Bump this version to invalidate every cached text conversion when the
+  # underlying MarkItDown library or its options change in a meaningful way.
+  version: "text-v1"
+  # ---- Image OCR (.png/.jpg/.jpeg) via RapidOCR ----
+  # Cross-platform OCR (Windows / Linux / macOS Intel & Apple Silicon),
+  # backed by onnxruntime. Default stack: PP-OCRv5 mobile (CPU-friendly,
+  # ~21 MB total models), covers simplified/traditional Chinese + English
+  # + Japanese. EXIF metadata is appended separately via MarkItDown.
+  image_ocr_version: "PP-OCRv5"     # PP-OCRv5 / PP-OCRv4 / PP-OCRv3
+  image_ocr_model_type: "mobile"    # mobile / server
+  # Language tags applied to det/rec models separately. Common rec values:
+  # "ch" (中英), "en", "japan", "korean", "chinese_cht", "latin",
+  # "arabic", "cyrillic", "devanagari". Det usually stays "ch" or "en".
+  image_ocr_lang_det: "ch"
+  image_ocr_lang_rec: "ch"
+  # ---- Audio / video transcription via sherpa-onnx + SenseVoice-Small ----
+  # Drop the extracted model directory here (must contain `model.int8.onnx`
+  # or `model.onnx` and `tokens.txt`). Relative paths resolve against the
+  # repository root. Default: `models/sense-voice` next to pyproject.toml.
+  audio_model_dir: "models/sense-voice"
+  # "auto" / "zh" / "en" / "ja" / "ko" / "yue" -- SenseVoice supported langs.
+  audio_language: "auto"
+  # Inverse text normalization ("一二三" -> "123", punctuation).
+  audio_use_itn: true
+  # Decoding threads for sherpa-onnx OfflineRecognizer.
+  audio_num_threads: 4
+  # Optional explicit ffmpeg binary path. Leave empty to auto-detect: PATH
+  # first, then the binary bundled by imageio-ffmpeg.
+  ffmpeg_path: ""
 
-mcp:
-  enable_maintenance_tools: false
-  default_search_mode: "hybrid"
+data_pipeline:
+  # Bump this to invalidate every cached Parquet artifact when the data lane
+  # rules (column inference, sheet split policy, ...) change in a meaningful way.
+  version: "data-v1"
+  # Sample rows included in metadata-only Markdown previews for data-class files.
+  sample_rows: 5
+
+scan:
+  # File extensions (case-insensitive, leading dot) treated as data-class
+  # during convert. Data-class files default to metadata-only Markdown
+  # previews, and become eligible for Parquet export when tagged ``data``.
+  data_suffixes:
+    - ".csv"
+    - ".tsv"
+    - ".xlsx"
+    - ".xls"
+    - ".json"
+    - ".xml"
+    - ".yaml"
+    - ".yml"
 
 ingest:
   # Documents are processed sequentially. Within a single document, this many
@@ -64,3 +106,7 @@ ingest:
   # (chunks are sharded across these workers). Tune together with
   # OLLAMA_NUM_PARALLEL (default 4) on the Ollama side.
   concurrency: 4
+
+mcp:
+  enable_maintenance_tools: false
+  default_search_mode: "hybrid"

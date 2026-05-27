@@ -1,9 +1,9 @@
 ﻿"""Cross-platform non-blocking file lock for KB step tools.
 
 The lock is acquired independently by each step (scan / convert / ingest) so
-that any two of them 鈥?whether triggered by the CLI, the MCP server, the
-pipeline wrapper, or a scheduler 鈥?never write to documents.csv, processed/,
-index/database.sqlite, or the search indexes at the same time.
+that any two of them — whether triggered by the CLI, the MCP server, the
+pipeline wrapper, or a scheduler — never write to docs.csv, text/,
+store/db.sqlite, or the search indexes at the same time.
 
 The wrapper that runs the three steps in sequence (actions/run-pipeline.ps1,
 kb.run_pipeline) does NOT take a lock itself; it just invokes the three
@@ -38,9 +38,9 @@ class LockBusyError(RuntimeError):
 
 
 def _lock_path(cfg: Config) -> Path:
-    # index/run.lock 鈥?lives next to database.sqlite. Shared by all steps so
+    # store/run.lock — lives next to db.sqlite. Shared by all steps so
     # that scan/convert/ingest never overlap, regardless of who invoked them.
-    return cfg.database_data.parent / "run.lock"
+    return cfg.db_data.parent / "run.lock"
 
 
 @contextmanager

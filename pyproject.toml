@@ -12,23 +12,34 @@ dependencies = [
   "pyyaml>=6.0",
   "click>=8.1",
   "rich>=13.7",
-  # Document conversion
-  "markdownify>=0.11",
-  "python-docx>=1.1",
-  "pypdf>=4.0",
-  "python-pptx>=0.6",
-  "openpyxl>=3.1",
+  # Document conversion: Microsoft MarkItDown drives every supported format.
+  # Offline-only — we intentionally exclude online extras such as
+  # `audio-transcription` (Google Web Speech API), `youtube-transcription`,
+  # `az-doc-intel` and `az-content-understanding`.
+  "markitdown[pdf,docx,pptx,xlsx,xls,outlook]>=0.0.1a3",
+  # Image OCR (.png/.jpg/.jpeg -> .md) via RapidOCR (onnxruntime, cross-platform:
+  # Windows / Linux / macOS Intel & Apple Silicon). Defaults to PP-OCRv5 mobile.
+  # MarkItDown image converter is used in parallel for EXIF metadata only.
+  "rapidocr>=2.0",
+  "onnxruntime>=1.17",
+  # Audio / video transcription via sherpa-onnx + SenseVoice-Small (NAR ASR,
+  # ONNX runtime). Non-WAV media is normalized to 16 kHz mono PCM via ffmpeg
+  # first; imageio-ffmpeg bundles a cross-platform ffmpeg binary so the
+  # pipeline works without a system-wide ffmpeg install.
+  "sherpa-onnx>=1.10",
+  "imageio-ffmpeg>=0.4",
+  "numpy>=1.24",
   # Search engines
   "tantivy>=0.21",
   "jieba>=0.42",
   "lancedb>=0.6",
   "pyarrow>=15.0",
+  # Tabular data lane: data-tagged files (.csv/.tsv/.xlsx/.xls/.json/.xml/
+  # .yaml/.yml) are materialized into Parquet under data/ and exposed to the
+  # Agent via DuckDB read-only SQL.
+  "duckdb>=1.0",
   # Embeddings: delegated to a local Ollama server (e.g. `qwen3-embedding:0.6b`).
   "ollama>=0.3",
-  # Image OCR (.png/.jpg/.jpeg -> .md) via RapidOCR (onnxruntime, cross-platform:
-  # Windows / Linux / macOS Intel & Apple Silicon). Defaults to PP-OCRv5 mobile.
-  "rapidocr>=2.0",
-  "onnxruntime>=1.17",
   # MCP server
   "mcp>=1.0",
 ]
@@ -45,6 +56,8 @@ kb-convert = "tools.convert:main"
 kb-ingest = "tools.ingest:main"
 kb-search = "tools.search:main"
 kb-metadata = "tools.metadata:main"
+kb-data = "tools.data:main"
+kb-app = "tools.app:main"
 kb-server = "server:main"
 
 [build-system]

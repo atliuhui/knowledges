@@ -37,7 +37,7 @@ def main(ctx: click.Context, config_path: Path | None, kb_root: str | None) -> N
 def list_docs(ctx: click.Context, status: tuple[str, ...],
               missing_tags: bool, missing_title: bool, limit: int) -> None:
     cfg = ctx.obj["cfg"]
-    rows = md.load_csv(cfg.documents_data)
+    rows = md.load_csv(cfg.docs_data)
     if status:
         rows = [r for r in rows if r.status in set(status)]
     if missing_tags:
@@ -59,7 +59,7 @@ def list_docs(ctx: click.Context, status: tuple[str, ...],
 @click.pass_context
 def list_tags(ctx: click.Context) -> None:
     cfg = ctx.obj["cfg"]
-    rows = md.load_csv(cfg.documents_data)
+    rows = md.load_csv(cfg.docs_data)
     counts: dict[str, int] = {}
     for r in rows:
         for t in r.tag_list():

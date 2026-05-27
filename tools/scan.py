@@ -1,4 +1,4 @@
-"""Scan documents/ and update index/documents.csv.
+"""Scan docs/ and update store/docs.csv.
 
 Responsibilities (see README §"mcp_server\\tools\\scan.py"):
   - Compute snapshot fields (source_hash/size/mtime).
@@ -9,7 +9,6 @@ Responsibilities (see README §"mcp_server\\tools\\scan.py"):
 
 from __future__ import annotations
 
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -35,19 +34,19 @@ def _now() -> str:
 @click.option("--config", "config_path", type=click.Path(path_type=Path), default=None)
 @click.option("--kb-root", "kb_root", type=str, default=None,
               help="Override knowledge_base_root.")
-@click.option("--dry-run", is_flag=True, help="Do not write documents.csv.")
+@click.option("--dry-run", is_flag=True, help="Do not write docs.csv.")
 def main(config_path: Path | None, kb_root: str | None, dry_run: bool) -> None:
     cfg = load_config(config_path=config_path, knowledge_base_root_override=kb_root)
     cfg.ensure_dirs()
     log = setup_logger("scan", cfg.logs_dir / "scan.log")
-    log.info("scan start: documents=%s csv=%s", cfg.documents_dir, cfg.documents_data)
+    log.info("scan start: docs=%s csv=%s", cfg.docs_dir, cfg.docs_data)
 
     with acquire_run_lock_or_exit(cfg, step="scan", logger=log):
         _run_scan(cfg, log, dry_run=dry_run)
 
 
 def _run_scan(cfg, log, *, dry_run: bool) -> None:
-    rows = md.load_csv(cfg.documents_data)
+    rows = md.load_csv(cfg.docs_data)
     by_path: dict[str, md.MetadataRow] = {r.source_path: r for r in rows}
 
     files = iter_documents(cfg)
@@ -116,10 +115,10 @@ def _run_scan(cfg, log, *, dry_run: bool) -> None:
         log.error("validation: %s", e)
 
     if not dry_run:
-        md.save_csv(cfg.documents_data, rows)
-        log.info("documents.csv saved: %s", cfg.documents_data)
+        md.save_csv(cfg.docs_data, rows)
+        log.info("docs.csv saved: %s", cfg.docs_data)
     else:
-        log.info("dry-run: documents.csv NOT written")
+        log.info("dry-run: docs.csv NOT written")
 
     log.info(
         "scan done: new=%d updated=%d unchanged=%d missing=%d errors=%d",

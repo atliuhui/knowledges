@@ -35,6 +35,22 @@ def acquire_run_lock_or_exit(
         sys.exit(EXIT_LOCK_BUSY)
 
 
+class _ConsoleSummaryFormatter(logging.Formatter):
+    """Formatter that truncates the message at the first ' | ' separator.
+
+    Detailed phase timings / throughput stats are emitted after a ' | '
+    delimiter; the console only needs the leading summary while the file
+    handler retains the full line.
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        formatted = super().format(record)
+        idx = formatted.find(" | ")
+        if idx != -1:
+            return formatted[:idx]
+        return formatted
+
+
 def setup_logger(name: str, log_file: Path) -> logging.Logger:
     log_file.parent.mkdir(parents=True, exist_ok=True)
     logger = logging.getLogger(name)
@@ -42,14 +58,18 @@ def setup_logger(name: str, log_file: Path) -> logging.Logger:
     # Avoid duplicate handlers on re-init.
     if logger.handlers:
         return logger
-    fmt = logging.Formatter(
+    fmt_full = logging.Formatter(
+        fmt="%(asctime)s %(levelname)s %(name)s :: %(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%S",
+    )
+    fmt_summary = _ConsoleSummaryFormatter(
         fmt="%(asctime)s %(levelname)s %(name)s :: %(message)s",
         datefmt="%Y-%m-%dT%H:%M:%S",
     )
     fh = logging.FileHandler(log_file, encoding="utf-8")
-    fh.setFormatter(fmt)
+    fh.setFormatter(fmt_full)
     logger.addHandler(fh)
     sh = logging.StreamHandler(sys.stderr)
-    sh.setFormatter(fmt)
+    sh.setFormatter(fmt_summary)
     logger.addHandler(sh)
     return logger

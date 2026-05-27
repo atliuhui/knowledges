@@ -41,6 +41,24 @@ CREATE TABLE IF NOT EXISTS documents (
 
 CREATE INDEX IF NOT EXISTS idx_documents_source_path ON documents(source_path);
 CREATE INDEX IF NOT EXISTS idx_documents_convert_status ON documents(convert_status);
+
+-- Registry for the data lane (Parquet artifacts under data/). Each row maps
+-- a (source document, sub-table) pair to its Parquet file. xlsx/xls produce
+-- one row per sheet; csv/tsv/json/yaml/xml typically produce one row.
+CREATE TABLE IF NOT EXISTS data_tables (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    doc_id              TEXT NOT NULL,
+    source_path         TEXT NOT NULL,
+    table_name          TEXT NOT NULL,         -- stable handle for MCP tools
+    sheet               TEXT,                  -- xlsx/xls sheet name, NULL otherwise
+    parquet_path        TEXT NOT NULL,         -- relative to knowledge_base_root
+    columns_json        TEXT,                  -- json array of column names
+    row_count           INTEGER,
+    pipeline_version    TEXT,
+    created_at          TEXT,
+    UNIQUE(doc_id, table_name)
+);
+CREATE INDEX IF NOT EXISTS idx_data_tables_doc_id ON data_tables(doc_id);
 """
 
 
@@ -145,6 +163,77 @@ class Database:
                 "     OR vector_index_status IS NULL OR vector_index_status != 'ok')"
             ).fetchall()
         return [_row_to_record(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # data_tables (Parquet/DuckDB lane registry)
+    # ------------------------------------------------------------------
+
+    def delete_data_tables_for_doc(self, doc_id: str) -> list[str]:
+        """Remove all data_tables rows for a doc; return the parquet paths that
+        were registered (so the caller can unlink the files on disk).
+        """
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT parquet_path FROM data_tables WHERE doc_id = ?", (doc_id,)
+            ).fetchall()
+            conn.execute("DELETE FROM data_tables WHERE doc_id = ?", (doc_id,))
+        return [r["parquet_path"] for r in rows]
+
+    def upsert_data_table(
+        self,
+        *,
+        doc_id: str,
+        source_path: str,
+        table_name: str,
+        sheet: str | None,
+        parquet_path: str,
+        columns_json: str,
+        row_count: int,
+        pipeline_version: str,
+        created_at: str,
+    ) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT INTO data_tables "
+                "(doc_id, source_path, table_name, sheet, parquet_path, "
+                " columns_json, row_count, pipeline_version, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(doc_id, table_name) DO UPDATE SET "
+                " source_path=excluded.source_path, "
+                " sheet=excluded.sheet, "
+                " parquet_path=excluded.parquet_path, "
+                " columns_json=excluded.columns_json, "
+                " row_count=excluded.row_count, "
+                " pipeline_version=excluded.pipeline_version, "
+                " created_at=excluded.created_at",
+                (doc_id, source_path, table_name, sheet, parquet_path,
+                 columns_json, row_count, pipeline_version, created_at),
+            )
+
+    def list_data_tables(self, doc_id: str | None = None) -> list[dict]:
+        sql = (
+            "SELECT doc_id, source_path, table_name, sheet, parquet_path, "
+            "columns_json, row_count, pipeline_version, created_at "
+            "FROM data_tables"
+        )
+        args: tuple = ()
+        if doc_id is not None:
+            sql += " WHERE doc_id = ?"
+            args = (doc_id,)
+        sql += " ORDER BY doc_id, table_name"
+        with self._conn() as conn:
+            rows = conn.execute(sql, args).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_data_table(self, table_name: str) -> dict | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT doc_id, source_path, table_name, sheet, parquet_path, "
+                "columns_json, row_count, pipeline_version, created_at "
+                "FROM data_tables WHERE table_name = ?",
+                (table_name,),
+            ).fetchone()
+        return dict(row) if row else None
 
 
 def _row_to_record(row: sqlite3.Row) -> DocRecord:

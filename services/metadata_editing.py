@@ -7,7 +7,6 @@ Workflow: callers must `preview` first, then `apply` after user confirmation.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from typing import Any, Iterable
 
 from . import metadata as md
@@ -87,7 +86,7 @@ def _diff(row: md.MetadataRow, patch: dict[str, Any]) -> dict[str, FieldChange]:
 
 def preview_update(cfg: Config, doc_id: str, patch: dict[str, Any]) -> dict[str, Any]:
     _validate_patch(patch)
-    rows = md.load_csv(cfg.documents_data)
+    rows = md.load_csv(cfg.docs_data)
     row = next((r for r in rows if r.id == doc_id), None)
     if row is None:
         raise MetadataEditError(f"document not found: {doc_id}")
@@ -106,7 +105,7 @@ def preview_update(cfg: Config, doc_id: str, patch: dict[str, Any]) -> dict[str,
 
 def apply_update(cfg: Config, doc_id: str, patch: dict[str, Any]) -> dict[str, Any]:
     _validate_patch(patch)
-    rows = md.load_csv(cfg.documents_data)
+    rows = md.load_csv(cfg.docs_data)
     found = False
     requires_ingest = False
     for row in rows:
@@ -126,7 +125,7 @@ def apply_update(cfg: Config, doc_id: str, patch: dict[str, Any]) -> dict[str, A
         break
     if not found:
         raise MetadataEditError(f"document not found: {doc_id}")
-    md.save_csv(cfg.documents_data, rows)
+    md.save_csv(cfg.docs_data, rows)
     return {"updated": 1, "requires_ingest": requires_ingest}
 
 
@@ -167,7 +166,7 @@ def _apply_bulk(row: md.MetadataRow, op: BulkOperation) -> dict[str, FieldChange
 
 
 def bulk_preview(cfg: Config, ids: Iterable[str], op: BulkOperation) -> dict[str, Any]:
-    rows = md.load_csv(cfg.documents_data)
+    rows = md.load_csv(cfg.docs_data)
     id_set = set(ids)
     changes_out: list[dict[str, Any]] = []
     requires_ingest = False
@@ -190,7 +189,7 @@ def bulk_preview(cfg: Config, ids: Iterable[str], op: BulkOperation) -> dict[str
 
 
 def bulk_apply(cfg: Config, ids: Iterable[str], op: BulkOperation) -> dict[str, Any]:
-    rows = md.load_csv(cfg.documents_data)
+    rows = md.load_csv(cfg.docs_data)
     id_set = set(ids)
     updated = 0
     requires_ingest = False
@@ -202,9 +201,6 @@ def bulk_apply(cfg: Config, ids: Iterable[str], op: BulkOperation) -> dict[str, 
             updated += 1
             if any(k in INDEX_AFFECTING for k in diff.keys()):
                 requires_ingest = True
-    md.save_csv(cfg.documents_data, rows)
+    md.save_csv(cfg.docs_data, rows)
     return {"updated": updated, "requires_ingest": requires_ingest}
 
-
-def now_iso() -> str:
-    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")

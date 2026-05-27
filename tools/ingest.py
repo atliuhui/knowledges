@@ -55,9 +55,9 @@ def main(config_path: Path | None, kb_root: str | None, force: bool,
 
 def _run_ingest(cfg, log, *, force: bool, only: tuple[str, ...], no_vector: bool,
                 concurrency: int | None) -> None:
-    rows = md.load_csv(cfg.documents_data)
+    rows = md.load_csv(cfg.docs_data)
     csv_by_id = {r.id: r for r in rows}
-    store = Database(cfg.database_data)
+    store = Database(cfg.db_data)
     records = store.all()
     only_set = set(only) if only else None
 
@@ -307,11 +307,18 @@ def _run_ingest(cfg, log, *, force: bool, only: tuple[str, ...], no_vector: bool
             doc_id, status, n_chunks, timings, total = _process_one(rec, row, needs_ft, needs_vec)
             if status == "ok":
                 n_ok += 1
+                chars = int(timings.get("text_chars", 0) or 0)
+                embed_s = float(timings.get("embed", 0.0) or 0.0)
+                chunks_per_s = (n_chunks / embed_s) if embed_s > 0.0 else 0.0
+                kchars_per_s = ((chars / 1000.0) / embed_s) if embed_s > 0.0 and chars > 0 else 0.0
+                ms_per_chunk = ((embed_s * 1000.0) / n_chunks) if n_chunks > 0 and embed_s > 0.0 else 0.0
+                s_per_kchar = (embed_s / (chars / 1000.0)) if chars > 0 and embed_s > 0.0 else 0.0
                 log.info(
-                    "OK   id=%s chunks=%d chars=%d total=%.2fs | read=%.2f chunk=%.2f embed=%.2f ft=%.2f vec=%.2f store=%.2f",
-                    doc_id, n_chunks, timings.get("text_chars", 0), total,
+                    "OK   id=%s chunks=%d chars=%d total=%.2fs | read=%.2f chunk=%.2f embed=%.2f ft=%.2f vec=%.2f store=%.2f | embed_throughput chunks/s=%.2f kchars/s=%.2f ms/chunk=%.1f s/kchar=%.2f",
+                    doc_id, n_chunks, chars, total,
                     timings.get("read", 0.0), timings.get("chunk", 0.0), timings.get("embed", 0.0),
                     timings.get("ft_write", 0.0), timings.get("vec_write", 0.0), timings.get("store", 0.0),
+                    chunks_per_s, kchars_per_s, ms_per_chunk, s_per_kchar,
                 )
             else:
                 n_failed += 1

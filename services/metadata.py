@@ -1,4 +1,4 @@
-"""Read / write `index/documents.csv`.
+"""Read / write `store/docs.csv`.
 
 The CSV is the source-document state boundary. It mixes tool-maintained snapshot
 fields with human-maintained semantic fields. We preserve human fields on update.
