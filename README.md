@@ -16,7 +16,9 @@
     ...
   data\             # 数据类文档的规范化产物（Parquet），工具维护，DuckDB 查询
     ...
-  apps\             # H5 离线应用目录，由 Agent 通过 kb.create_app 写入；miniserve 静态托管
+  apps\             # H5 离线应用目录，由 Agent 通过 kb.create_app 写入；PocketBase 静态托管
+    ...
+  apps_data\        # 本地 web 服务的运行态数据（默认 PocketBase 的 SQLite、uploads、admin 凭据、migrations），由服务进程自动创建
     ...
   store\
     docs.csv   # 源文档快照 + 人工语义元数据
@@ -31,7 +33,7 @@
 ```text
 knowledges\
   .venv\            # Python 虚拟环境
-  vendor\           # 仓库内置二进制（miniserve.exe 等），由 actions\download-*.ps1 拉取
+  vendor\           # 仓库内置二进制（pocketbase.exe / miniserve.exe 等），由 actions\download-*.ps1 拉取
   tools\
     scan.py         # 扫描 docs\，更新 store\docs.csv
     convert.py      # 根据 store\docs.csv 更新 text\ 和 db.sqlite
@@ -108,6 +110,8 @@ paths:
   text_dir: "text"
   data_dir: "data"          # Parquet 规范化产物落盘目录
   logs_dir: "logs"
+  apps_dir: "apps"
+  apps_data_dir: "apps_data"  # 本地 web 服务（PocketBase 等）的运行态数据：SQLite / uploads / migrations / admin 凭据
   docs_data: "store\\docs.csv"
   db_data: "store\\db.sqlite"
   fulltext_index_dir: "store\\fulltext"
@@ -744,7 +748,9 @@ embedding:
 
 ## H5 离线应用托管（apps\）
 
-知识库提供一个 `apps\` 目录，用于存放由 Agent 生成或人工放置的 HTML5 离线应用。后台用 [miniserve](https://github.com/svenstaro/miniserve) 在 loopback 暴露本地静态站点。当前 `actions\start-apps-server.ps1` 默认以 `%USERPROFILE%\knowledges\` 为站点根目录，因此应用默认访问路径是 `http://127.0.0.1:8788/apps/<slug>/`。
+知识库提供一个 `apps\` 目录，用于存放由 Agent 生成或人工放置的 HTML5 离线应用。默认用 [PocketBase](https://pocketbase.io/) 在 loopback 暴露本地静态站点（顺带得到 SQLite 后端、Admin UI 和 REST API，可供后续 H5 应用按需调用）。`actions\start-pocketbase.ps1` 默认以 `%USERPROFILE%\knowledges\` 为 `--publicDir`，因此应用默认访问路径是 `http://127.0.0.1:8788/apps/<slug>/`，Admin UI 在 `http://127.0.0.1:8788/_/`。
+
+> 早期版本基于 [miniserve](https://github.com/svenstaro/miniserve)，对应的 `actions\download-miniserve.ps1` 和 `actions\start-miniserve.ps1` 仍然保留，作为只需要纯静态托管时的轻量备选。两者绑定到相同的 `apps.host` / `apps.port`，请勿同时启动。
 
 ### 目录与 URL 映射
 
@@ -767,37 +773,41 @@ http://127.0.0.1:8788/apps/todo/
 http://127.0.0.1:8788/apps/network-map/
 ```
 
-H5 应用本身是纯前端的，加载完成后不依赖 miniserve；如需 Service Worker 真离线缓存，由 Agent 在生成时一并写入。
+H5 应用本身是纯前端的，加载完成后不依赖后端进程；如需 Service Worker 真离线缓存，由 Agent 在生成时一并写入。
 
-### 准备 miniserve
+### 准备 PocketBase
 
-仓库提供 `actions\download-miniserve.ps1`，从 [svenstaro/miniserve releases](https://github.com/svenstaro/miniserve/releases) 拉取 Windows x86_64 单文件二进制并放到 `<repo>\vendor\miniserve.exe`，与 `.venv\` / `models\` 同处一地：
+仓库提供 `actions\download-pocketbase.ps1`，从 [pocketbase/pocketbase releases](https://github.com/pocketbase/pocketbase/releases) 拉取 Windows amd64 单文件二进制（zip 包内只取 `pocketbase.exe`）放到 `<repo>\vendor\pocketbase.exe`，与 `.venv\` / `models\` 同处一地：
 
 ```powershell
 # 默认版本
-.\actions\download-miniserve.ps1
+.\actions\download-pocketbase.ps1
 
 # 指定版本或自定义 URL
-.\actions\download-miniserve.ps1 -Version 0.29.0
-.\actions\download-miniserve.ps1 -Url "https://.../miniserve-x.y.z-x86_64-pc-windows-msvc.exe"
+.\actions\download-pocketbase.ps1 -Version 0.38.2
+.\actions\download-pocketbase.ps1 -Url "https://.../pocketbase_x.y.z_windows_amd64.zip"
 
 # 强制重下
-.\actions\download-miniserve.ps1 -Force
+.\actions\download-pocketbase.ps1 -Force
 ```
 
-### 启动静态服务
+> 如果只想要纯静态托管，可改用 `actions\download-miniserve.ps1` 拉取 [miniserve](https://github.com/svenstaro/miniserve)；用法见脚本内注释，对应启动脚本是 `actions\start-miniserve.ps1`。
+
+### 启动本地服务
 
 ```powershell
-.\actions\start-apps-server.ps1
-# 默认监听 127.0.0.1:8788，根目录为 %USERPROFILE%\knowledges\
+.\actions\start-pocketbase.ps1
+# 默认监听 127.0.0.1:8788，--publicDir 为 %USERPROFILE%\knowledges\
+# --dir (PocketBase $DataDir) 默认为 %USERPROFILE%\knowledges\apps_data\（由 paths.apps_data_dir 控制）
 ```
 
 可通过参数或 `config.yaml` 覆盖：
 
 ```powershell
-.\actions\start-apps-server.ps1 -Port 9000
-.\actions\start-apps-server.ps1 -Interface 0.0.0.0   # 暴露到局域网（请确认信任环境）
-.\actions\start-apps-server.ps1 -Root "D:\shared\knowledges"
+.\actions\start-pocketbase.ps1 -Port 9000
+.\actions\start-pocketbase.ps1 -Interface 0.0.0.0   # 暴露到局域网（请确认信任环境）
+.\actions\start-pocketbase.ps1 -Root "D:\shared\knowledges"
+.\actions\start-pocketbase.ps1 -DataDir "D:\shared\apps_data"
 ```
 
 ```yaml
@@ -806,12 +816,14 @@ apps:
   port: 8788
   # 若保持 null，kb.create_app/kb.list_apps 会按 paths.apps_dir 自动补路径前缀；
   # 默认即 http://127.0.0.1:8788/apps/<slug>/。
-  # 如你的 miniserve 根目录不是 knowledge_base_root，可显式设置：
+  # 如你的 publicDir 不是 knowledge_base_root，可显式设置：
   # "http://127.0.0.1:8788/apps"（或你的实际反向代理入口）
   base_url: null
 ```
 
-> miniserve 是单二进制、零配置静态服务器，自带常见 MIME 表，支持 `--index index.html` 默认入口、目录浏览、`--hide-version-footer` 等开关。本仓库 `start-apps-server.ps1` 已带上推荐参数。
+> PocketBase 自带 SQLite + 文件管理 + Admin UI + REST/Realtime API，但用作 H5 静态托管时只用到 `serve --publicDir` 这一面：所有 `apps\<slug>\` 内的文件原样按 MIME 表暴露，`/_/` 与 `/api/` 是 PocketBase 保留前缀，永远不会与 `apps\` 路径冲突。
+>
+> 备选的 miniserve 启动脚本（`actions\start-miniserve.ps1`）仍然有效；两套服务监听同一端口，请按需二选一。
 
 ### MCP 工具：`kb.create_app` / `kb.list_apps`
 
@@ -861,7 +873,7 @@ apps:
 Agent 收到结果后，应在 chat 中给出一句类似：
 
 ```markdown
-已创建 **Todo App**：http://127.0.0.1:8788/apps/todo/ （需先运行 `actions\start-apps-server.ps1`）
+已创建 **Todo App**：http://127.0.0.1:8788/apps/todo/ （需先运行 `actions\start-pocketbase.ps1` 或 `actions\start-miniserve.ps1`）
 ```
 
 ### 与流水线的关系
@@ -1245,10 +1257,11 @@ python -m tools.scan
 python -m tools.convert
 python -m tools.ingest
 
-# 5) （可选）下载 miniserve，准备 H5 离线应用托管
-#     落到 <repo>\vendor\miniserve.exe，与 .venv / models 同处一地。
-.\actions\download-miniserve.ps1
-# 之后用 .\actions\start-apps-server.ps1 启动
+# 5) （可选）下载 PocketBase，准备 H5 离线应用托管 + 本地后端
+#     落到 <repo>\vendor\pocketbase.exe，与 .venv / models 同处一地。
+#     若只需要纯静态托管，可改用 .\actions\download-miniserve.ps1。
+.\actions\download-pocketbase.ps1
+# 之后用 .\actions\start-pocketbase.ps1 启动（miniserve 对应 start-miniserve.ps1）
 # 默认访问路径示例： http://127.0.0.1:8788/apps/<slug>/
 ```
 

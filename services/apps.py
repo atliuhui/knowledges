@@ -2,7 +2,7 @@
 
 Agent-generated HTML5 offline apps live under ``<kb_root>/apps/<slug>/`` and
 are served by a loopback miniserve instance (see
-``actions/start-apps-server.ps1``). This module provides slug validation,
+``actions/start-miniserve.ps1`` or ``actions/start-pocketbase.ps1``). This module provides slug validation,
 safe file writing and a lightweight listing API used by the
 ``kb.create_app`` / ``kb.list_apps`` MCP tools.
 """
@@ -72,12 +72,16 @@ def app_dir(cfg: Config, slug: str) -> Path:
 def _default_apps_base_url(cfg: Config) -> str:
     """Best-effort base URL when apps.base_url is not explicitly set.
 
-    By default, start-apps-server serves ``knowledge_base_root`` and apps live
+    By default, the local web server (PocketBase or miniserve) serves ``knowledge_base_root`` and apps live
     under ``<root>/<paths.apps_dir>`` (typically ``/apps``). Mirror that path
     segment in generated links so kb.list_apps/kb.create_app URLs are directly
     clickable out of the box.
     """
-    base = f"http://{cfg.apps.host}:{cfg.apps.port}".rstrip("/")
+    # 0.0.0.0 / :: 只是 bind 通配，不是可点击的 URL；落到聊天卡片里时换成 localhost。
+    host = cfg.apps.host
+    if host in ("0.0.0.0", "::", "*", ""):
+        host = "localhost"
+    base = f"http://{host}:{cfg.apps.port}".rstrip("/")
     try:
         rel = cfg.apps_dir.resolve().relative_to(cfg.knowledge_base_root.resolve())
     except ValueError:

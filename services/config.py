@@ -79,7 +79,7 @@ class AppsConfig:
 
     The actual file root is ``<knowledge_base_root>/<paths.apps_dir>``;
     this dataclass only carries the network-facing fields used by the
-    start-apps-server script and the kb.create_app / kb.list_apps tools.
+    local web server scripts (start-pocketbase / start-miniserve) and the kb.create_app / kb.list_apps tools.
     """
     host: str = "127.0.0.1"
     port: int = 8788
@@ -114,6 +114,7 @@ class Config:
     data_dir: Path
     logs_dir: Path
     apps_dir: Path
+    apps_data_dir: Path
     docs_data: Path
     db_data: Path
     fulltext_index_dir: Path
@@ -187,6 +188,7 @@ def load_config(
     data_dir = kb_root / paths.get("data_dir", "data")
     logs_dir = kb_root / paths.get("logs_dir", "logs")
     apps_dir = kb_root / paths.get("apps_dir", "apps")
+    apps_data_dir = kb_root / paths.get("apps_data_dir", "apps_data")
     docs_data = kb_root / paths.get("docs_data", "store/docs.csv")
     db_data = kb_root / paths.get("db_data", "store/db.sqlite")
     fulltext_index_dir = kb_root / paths.get("fulltext_index_dir", "store/fulltext")
@@ -209,6 +211,7 @@ def load_config(
         data_dir=data_dir,
         logs_dir=logs_dir,
         apps_dir=apps_dir,
+        apps_data_dir=apps_data_dir,
         docs_data=docs_data,
         db_data=db_data,
         fulltext_index_dir=fulltext_index_dir,

@@ -6,16 +6,23 @@ paths:
   data_dir: "data"
   logs_dir: "logs"
   apps_dir: "apps"
+  apps_data_dir: "apps_data"    # 本地 web 服务（PocketBase 等）的运行态数据：SQLite / 上传 / migrations / admin 凭据
   docs_data: "store\\docs.csv"
   db_data: "store\\db.sqlite"
   fulltext_index_dir: "store\\fulltext"
   vector_index_dir: "store\\vector"
 
 apps:
-  # Loopback HTTP server (miniserve) hosting agent-generated H5 offline apps
+  # Loopback HTTP server (PocketBase) hosting agent-generated H5 offline apps
   # under <knowledge_base_root>\apps\<slug>\. Start with
-  # `.\actions\start-apps-server.ps1` after running `download-miniserve.ps1`.
-  host: "127.0.0.1"
+  # `.\actions\start-pocketbase.ps1` after running `download-pocketbase.ps1`.
+  # `actions\start-miniserve.ps1` (miniserve) is kept as a lightweight
+  # fallback that serves the same `apps\<slug>\` layout.
+  #
+  # host:
+  #   "127.0.0.1" 仅本机回环；"0.0.0.0" 监听所有网卡，局域网其它机器可通过
+  #   本机 IP 访问（注意：PocketBase admin UI 也会一起暴露，按需配置防火墙）。
+  host: "0.0.0.0"
   port: 8788
   # Base URL advertised by kb.create_app / kb.list_apps in chat cards.
   # Leave null to derive from `http://{host}:{port}` automatically.

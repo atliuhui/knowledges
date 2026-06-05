@@ -17,10 +17,10 @@ param(
 #     port: 8788
 #
 # Override via CLI:
-#   .\actions\start-apps-server.ps1
-#   .\actions\start-apps-server.ps1 -Port 9000
-#   .\actions\start-apps-server.ps1 -Interface 0.0.0.0   # exposes on LAN
-#   .\actions\start-apps-server.ps1 -Root "D:\shared\apps"
+#   .\actions\start-miniserve.ps1
+#   .\actions\start-miniserve.ps1 -Port 9000
+#   .\actions\start-miniserve.ps1 -Interface 0.0.0.0   # exposes on LAN
+#   .\actions\start-miniserve.ps1 -Root "D:\shared\apps"
 
 $ErrorActionPreference = "Stop"
 

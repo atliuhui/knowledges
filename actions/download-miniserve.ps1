@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.29.0",
+    [string]$Version = "0.35.0",
     [string]$Url,
     [string]$BinDir,
     [switch]$Force
@@ -13,7 +13,7 @@ param(
 #
 # Usage:
 #   .\actions\download-miniserve.ps1                  # default version
-#   .\actions\download-miniserve.ps1 -Version 0.29.0
+#   .\actions\download-miniserve.ps1 -Version 0.35.0
 #   .\actions\download-miniserve.ps1 -Force           # redownload
 #   .\actions\download-miniserve.ps1 -Url "https://.../miniserve-...exe"
 #
