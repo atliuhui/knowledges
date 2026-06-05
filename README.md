@@ -16,7 +16,7 @@
     ...
   data\             # 数据类文档的规范化产物（Parquet），工具维护，DuckDB 查询
     ...
-  apps\             # H5 离线应用目录，由 Agent 通过 kb.create_app 写入；PocketBase 静态托管
+  apps\             # H5 离线应用目录，由 Agent 通过 kb_create_app 写入；PocketBase 静态托管
     ...
   apps_data\        # 本地 web 服务的运行态数据（默认 PocketBase 的 SQLite、uploads、admin 凭据、migrations），由服务进程自动创建
     ...
@@ -80,7 +80,7 @@ knowledges\
 7. `store\fulltext\` 是关键词检索层，默认使用 Tantivy。
 8. `store\vector\` 是语义检索层，默认使用 LanceDB。
 9. Agent 不直接操作数据目录，而是通过 MCP 工具访问知识库能力。
-10. `data\` 是数据类文档（CSV / Excel / JSON / XML / YAML）的规范化层：标记为 `data` 标签的文档会被 `tools.convert` 转写为 Parquet 并登记到 `db.sqlite` 的 `data_tables` 表，由 MCP `kb.list_data_tables` / `kb.read_data_table` / `kb.query_data`（DuckDB 只读）暴露。
+10. `data\` 是数据类文档（CSV / Excel / JSON / XML / YAML）的规范化层：标记为 `data` 标签的文档会被 `tools.convert` 转写为 Parquet 并登记到 `db.sqlite` 的 `data_tables` 表，由 MCP `kb_list_data_tables` / `kb_read_data_table` / `kb_query_data`（DuckDB 只读）暴露。
 
 ## 数据流
 
@@ -623,7 +623,7 @@ python -c "from services.text_pipeline import preload_audio; print(preload_audio
 
 1. 用于本地命令行调试 data lane（Parquet + DuckDB）。
 2. 调用 `services\database.py` 读取 `data_tables` 注册表，调用 `services\data_query.py` 执行只读 SQL。
-3. 提供三个子命令，与 MCP 工具 `kb.list_data_tables` / `kb.read_data_table` / `kb.query_data` 一一对应：
+3. 提供三个子命令，与 MCP 工具 `kb_list_data_tables` / `kb_read_data_table` / `kb_query_data` 一一对应：
    - `python -m tools.data list [--doc-id ID]`
    - `python -m tools.data read TABLE_NAME [--limit N] [--offset M]`
    - `python -m tools.data query "SELECT ..." [--limit N]`
@@ -645,54 +645,66 @@ python -c "from services.text_pipeline import preload_audio; print(preload_audio
 
 `mcp_server` 通过 `server.py` 暴露知识库能力给 AI Agent。
 
+### 工具命名规则
+
+所有通过 `@mcp.tool(name=...)` 注册的工具名必须遵循以下约束：
+
+1. 必须匹配正则 `^[a-zA-Z0-9_-]+$`（只允许字母、数字、`_`、`-`，不允许 `.`、空格或其它符号）。
+2. 长度 1–64 字符。
+3. 以字母开头（不允许数字、`_`、`-` 开头）。
+4. 在所有已注册 MCP server 的工具集合内全局唯一（跨 server 也不得重名，便于 Agent 端去重路由）。
+5. 使用 snake_case 命名规范（小写单词以 `_` 连接，如 `list_data_tables`、`run_pipeline`）。
+
+本仓库统一使用 `kb_` 作为前缀（例如 `kb_search`、`kb_list_documents`），既满足上述规则，又便于 Agent 端按 server 区分。
+
 ### 只读工具
 
 默认开放：
 
 ```text
-kb.search
-kb.get_document
-kb.get_chunk
-kb.get_metadata
-kb.list_documents
-kb.list_tags
-kb.list_data_tables
-kb.read_data_table
-kb.query_data
-kb.suggest_metadata
-kb.preview_metadata_update
-kb.apply_metadata_update
-kb.bulk_preview_metadata_update
-kb.bulk_apply_metadata_update
-kb.create_app
-kb.list_apps
-kb.warmup
-kb.warmup_status
+kb_search
+kb_get_document
+kb_get_chunk
+kb_get_metadata
+kb_list_documents
+kb_list_tags
+kb_list_data_tables
+kb_read_data_table
+kb_query_data
+kb_suggest_metadata
+kb_preview_metadata_update
+kb_apply_metadata_update
+kb_bulk_preview_metadata_update
+kb_bulk_apply_metadata_update
+kb_create_app
+kb_list_apps
+kb_warmup
+kb_warmup_status
 ```
 
-其中查询类工具只读取索引、text 文本和元数据；metadata 更新类工具只修改 `store\docs.csv` 中的人工维护字段，并且必须遵循"先 preview、再 apply"的确认流程。`kb.warmup` 用于在执行 `kb.search` 等开销较大的工具前预热 Tantivy、LanceDB、jieba 和 Ollama embedding 模型，`kb.warmup_status` 返回最近一次预热的耗时分解，详见"冷启动与预热"一节。
+其中查询类工具只读取索引、text 文本和元数据；metadata 更新类工具只修改 `store\docs.csv` 中的人工维护字段，并且必须遵循"先 preview、再 apply"的确认流程。`kb_warmup` 用于在执行 `kb_search` 等开销较大的工具前预热 Tantivy、LanceDB、jieba 和 Ollama embedding 模型，`kb_warmup_status` 返回最近一次预热的耗时分解，详见"冷启动与预热"一节。
 
 #### 数据类工具（DuckDB 只读）
 
-`kb.list_data_tables`、`kb.read_data_table`、`kb.query_data` 三件套服务于「数据类 + `data` 标签」的文档，底层为 `data\` 目录下的 Parquet 文件 + `db.sqlite` 中的 `data_tables` 注册表：
+`kb_list_data_tables`、`kb_read_data_table`、`kb_query_data` 三件套服务于「数据类 + `data` 标签」的文档，底层为 `data\` 目录下的 Parquet 文件 + `db.sqlite` 中的 `data_tables` 注册表：
 
-- `kb.list_data_tables(doc_id?)`：列出所有已登记的数据表，返回 `table_name / doc_id / source_path / sheet / parquet_path / columns / row_count`。
-- `kb.read_data_table(table_name, limit=50, offset=0)`：按表名分页读取，最大 `limit=1000`。
-- `kb.query_data(sql, limit=1000)`：在内存 DuckDB 上执行只读 SQL（每个登记表自动暴露为同名 View，背靠 `read_parquet(...)`）。安全约束：只允许单条 `SELECT` / `WITH`，禁用 `INSERT / UPDATE / DELETE / DROP / CREATE / ALTER / ATTACH / DETACH / COPY / EXPORT / IMPORT / PRAGMA / SET / LOAD / INSTALL / VACUUM / CHECKPOINT / TRUNCATE / CALL / MERGE` 等关键词；用户未指定 `LIMIT` 时自动套外层 `LIMIT`。
+- `kb_list_data_tables(doc_id?)`：列出所有已登记的数据表，返回 `table_name / doc_id / source_path / sheet / parquet_path / columns / row_count`。
+- `kb_read_data_table(table_name, limit=50, offset=0)`：按表名分页读取，最大 `limit=1000`。
+- `kb_query_data(sql, limit=1000)`：在内存 DuckDB 上执行只读 SQL（每个登记表自动暴露为同名 View，背靠 `read_parquet(...)`）。安全约束：只允许单条 `SELECT` / `WITH`，禁用 `INSERT / UPDATE / DELETE / DROP / CREATE / ALTER / ATTACH / DETACH / COPY / EXPORT / IMPORT / PRAGMA / SET / LOAD / INSTALL / VACUUM / CHECKPOINT / TRUNCATE / CALL / MERGE` 等关键词；用户未指定 `LIMIT` 时自动套外层 `LIMIT`。
 
 ### 维护工具
 
 可选开放：
 
 ```text
-kb.scan
-kb.convert
-kb.ingest
-kb.rebuild
-kb.run_pipeline
+kb_scan
+kb_convert
+kb_ingest
+kb_rebuild
+kb_run_pipeline
 ```
 
-`kb.run_pipeline` 会按顺序执行 `scan -> convert -> ingest`，并支持参数：
+`kb_run_pipeline` 会按顺序执行 `scan -> convert -> ingest`，并支持参数：
 
 ```text
 force      # 对 convert/ingest 传递 --force
@@ -704,18 +716,18 @@ no_vector  # ingest 跳过向量索引
 
 ### 冷启动与预热
 
-`mcp_server` 自身启动很快，但**第一次** `kb.search` / `kb.get_chunk` 会触发以下一次性开销：
+`mcp_server` 自身启动很快，但**第一次** `kb_search` / `kb_get_chunk` 会触发以下一次性开销：
 
 1. Ollama 第一次收到 embedding 请求时把模型权重装入 CPU/GPU（0.6B ≈ 1–3 秒，4B/8B 更久）；
 2. `lancedb` 与 `pyarrow` 首次 import；
 3. `jieba` 词典首次加载；
 4. Tantivy / LanceDB 索引首次打开。
 
-为避免 Agent 在用户面前出现可见的卡顿，可在一次会话开始时（或在批量调用 `kb.search` 之前）先调用 `kb.warmup` 工具：
+为避免 Agent 在用户面前出现可见的卡顿，可在一次会话开始时（或在批量调用 `kb_search` 之前）先调用 `kb_warmup` 工具：
 
 ```json
 {
-  "name": "kb.warmup",
+  "name": "kb_warmup",
   "arguments": {}
 }
 ```
@@ -735,7 +747,7 @@ no_vector  # ingest 跳过向量索引
 }
 ```
 
-`kb.warmup` 是只读、幂等的；重复调用几乎零成本（embedder 实例和索引句柄都会在模块层缓存）。
+`kb_warmup` 是只读、幂等的；重复调用几乎零成本（embedder 实例和索引句柄都会在模块层缓存）。
 
 要让 Ollama 加载后的模型不被自动卸载，可在 `config.yaml` 中设置：
 
@@ -814,7 +826,7 @@ H5 应用本身是纯前端的，加载完成后不依赖后端进程；如需 S
 apps:
   host: "127.0.0.1"     # 默认 loopback；改 0.0.0.0 才会被外部访问
   port: 8788
-  # 若保持 null，kb.create_app/kb.list_apps 会按 paths.apps_dir 自动补路径前缀；
+  # 若保持 null，kb_create_app/kb_list_apps 会按 paths.apps_dir 自动补路径前缀；
   # 默认即 http://127.0.0.1:8788/apps/<slug>/。
   # 如你的 publicDir 不是 knowledge_base_root，可显式设置：
   # "http://127.0.0.1:8788/apps"（或你的实际反向代理入口）
@@ -825,12 +837,12 @@ apps:
 >
 > 备选的 miniserve 启动脚本（`actions\start-miniserve.ps1`）仍然有效；两套服务监听同一端口，请按需二选一。
 
-### MCP 工具：`kb.create_app` / `kb.list_apps`
+### MCP 工具：`kb_create_app` / `kb_list_apps`
 
 | 工具 | 输入 | 行为 |
 |---|---|---|
-| `kb.create_app` | `slug`、`files: {relpath: content}`、`overwrite=false` | 在 `apps\<slug>\` 下写入文件，返回 `{slug, path, url, written_files, has_index, overwritten}` |
-| `kb.list_apps` | 无 | 列出 `apps\` 下符合 slug 规则的子目录，返回 `slug / url / path / has_index / file_count / size_bytes` |
+| `kb_create_app` | `slug`、`files: {relpath: content}`、`overwrite=false` | 在 `apps\<slug>\` 下写入文件，返回 `{slug, path, url, written_files, has_index, overwritten}` |
+| `kb_list_apps` | 无 | 列出 `apps\` 下符合 slug 规则的子目录，返回 `slug / url / path / has_index / file_count / size_bytes` |
 
 安全约束（实现位于 [services/apps.py](services/apps.py)）：
 
@@ -838,13 +850,13 @@ apps:
 2. 每个 `relpath` 仅允许 `[A-Za-z0-9._-]` 段、最大深度 8 层、单段 64 字符；
 3. 写入前用 `Path.resolve()` 二次校验，确保所有目标仍在 `apps\<slug>\` 内；
 4. 默认拒绝覆盖已存在的 app，需显式传 `overwrite=true`；
-5. `kb.list_apps` 只列出符合 slug 规则的子目录，跳过用户手工放置的其它文件夹。
+5. `kb_list_apps` 只列出符合 slug 规则的子目录，跳过用户手工放置的其它文件夹。
 
 调用示例：
 
 ```json
 {
-  "name": "kb.create_app",
+  "name": "kb_create_app",
   "arguments": {
     "slug": "todo",
     "files": {
@@ -930,24 +942,24 @@ scanned_at
 ```text
 用户：帮我整理没有 tag 的文档。
   ↓
-Agent 调用 kb.list_documents，筛选 missing_tags = true。
+Agent 调用 kb_list_documents，筛选 missing_tags = true。
   ↓
-Agent 调用 kb.suggest_metadata，生成建议标签和类型。
+Agent 调用 kb_suggest_metadata，生成建议标签和类型。
   ↓
 Agent 展示候选表格和建议修改。
   ↓
 用户确认接受、编辑或跳过。
   ↓
-Agent 调用 kb.preview_metadata_update 或 kb.bulk_preview_metadata_update。
+Agent 调用 kb_preview_metadata_update 或 kb_bulk_preview_metadata_update。
   ↓
 Agent 展示 before/after 修改预览。
   ↓
 用户最终确认。
   ↓
-Agent 调用 kb.apply_metadata_update 或 kb.bulk_apply_metadata_update。
+Agent 调用 kb_apply_metadata_update 或 kb_bulk_apply_metadata_update。
 ```
 
-### kb.list_documents
+### kb_list_documents
 
 用于列出文档并按 metadata 条件筛选。
 
@@ -987,7 +999,7 @@ Agent 调用 kb.apply_metadata_update 或 kb.bulk_apply_metadata_update。
 }
 ```
 
-### kb.list_tags
+### kb_list_tags
 
 返回已有标签和使用次数。
 
@@ -1008,7 +1020,7 @@ Agent 调用 kb.apply_metadata_update 或 kb.bulk_apply_metadata_update。
 }
 ```
 
-### kb.suggest_metadata
+### kb_suggest_metadata
 
 根据文件路径、标题、已有标签、text 内容摘要和现有标签集，建议标题、类型、标签、密级或状态。
 
@@ -1027,7 +1039,7 @@ Agent 调用 kb.apply_metadata_update 或 kb.bulk_apply_metadata_update。
 }
 ```
 
-### kb.preview_metadata_update
+### kb_preview_metadata_update
 
 只返回即将发生的变化，不写入文件。Agent 必须先展示该结果，再请求用户确认。
 
@@ -1068,7 +1080,7 @@ Agent 调用 kb.apply_metadata_update 或 kb.bulk_apply_metadata_update。
 }
 ```
 
-### kb.apply_metadata_update
+### kb_apply_metadata_update
 
 在用户确认后执行单文档 metadata 修改。
 
@@ -1093,7 +1105,7 @@ Agent 调用 kb.apply_metadata_update 或 kb.bulk_apply_metadata_update。
 }
 ```
 
-### kb.bulk_preview_metadata_update 与 kb.bulk_apply_metadata_update
+### kb_bulk_preview_metadata_update 与 kb_bulk_apply_metadata_update
 
 用于批量修改 metadata。批量 apply 前必须先 preview。
 
@@ -1209,7 +1221,7 @@ AI Agent 使用知识库时应遵守以下规则：
 
 ```text
 你可以通过本地 `mcp_server` 使用本地知识库。
-优先调用 kb.search 组合使用全文索引和向量索引。
+优先调用 kb_search 组合使用全文索引和向量索引。
 精确关键词、短语、编号和文件名使用全文检索。
 概念性、主题性和相似内容查询使用向量检索。
 读取内容时优先使用 text\ 中的 Markdown。

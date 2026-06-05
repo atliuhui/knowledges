@@ -79,7 +79,7 @@ class AppsConfig:
 
     The actual file root is ``<knowledge_base_root>/<paths.apps_dir>``;
     this dataclass only carries the network-facing fields used by the
-    local web server scripts (start-pocketbase / start-miniserve) and the kb.create_app / kb.list_apps tools.
+    local web server scripts (start-pocketbase / start-miniserve) and the kb_create_app / kb_list_apps tools.
     """
     host: str = "127.0.0.1"
     port: int = 8788

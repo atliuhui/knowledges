@@ -5,28 +5,28 @@ are gated behind `mcp.enable_maintenance_tools` in config.yaml.
 
 Tool list:
   Read-only:
-    kb.search
-    kb.get_document
-    kb.get_chunk
-    kb.get_metadata
-    kb.list_documents
-    kb.list_tags
-    kb.list_data_tables
-    kb.read_data_table
-    kb.query_data
-    kb.suggest_metadata
-    kb.preview_metadata_update
-    kb.apply_metadata_update
-    kb.bulk_preview_metadata_update
-    kb.bulk_apply_metadata_update
-    kb.warmup
-    kb.warmup_status
+    kb_search
+    kb_get_document
+    kb_get_chunk
+    kb_get_metadata
+    kb_list_documents
+    kb_list_tags
+    kb_list_data_tables
+    kb_read_data_table
+    kb_query_data
+    kb_suggest_metadata
+    kb_preview_metadata_update
+    kb_apply_metadata_update
+    kb_bulk_preview_metadata_update
+    kb_bulk_apply_metadata_update
+    kb_warmup
+    kb_warmup_status
   Maintenance (optional):
-    kb.scan
-    kb.convert
-    kb.ingest
-    kb.rebuild
-    kb.run_pipeline
+    kb_scan
+    kb_convert
+    kb_ingest
+    kb_rebuild
+    kb_run_pipeline
 """
 
 from __future__ import annotations
@@ -124,7 +124,7 @@ def _warmup_snapshot() -> dict[str, Any]:
 def _is_ollama_model_loaded(cfg: Config) -> bool:
     """Return True when the configured Ollama embedding model is currently loaded.
 
-    If this check fails for any reason, return False so `kb.warmup` can safely
+    If this check fails for any reason, return False so `kb_warmup` can safely
     trigger a fresh warmup run.
     """
     try:
@@ -203,7 +203,7 @@ def _run_warmup_once(
         return {"dim": cfg.embedding.dimension}
 
     def _warm_embedder():
-        # Re-use the hybrid_search module cache so the very next kb.search
+        # Re-use the hybrid_search module cache so the very next kb_search
         # query reuses the same OllamaEmbedder instance.
         from services import hybrid_search as hs
         from services.embeddings import OllamaEmbedder
@@ -291,7 +291,7 @@ def _warmup_worker(run_id: int) -> None:
 # ---------- Read-only tools ----------
 
 @mcp.tool(
-    name="kb.search",
+    name="kb_search",
     description="Hybrid (full-text + vector) search over the knowledge base.",
 )
 @_safe
@@ -303,7 +303,7 @@ def kb_search(query: str, mode: str | None = None, limit: int = 10) -> dict[str,
 
 
 @mcp.tool(
-    name="kb.get_document",
+    name="kb_get_document",
     description="Return a document's metadata plus its processed text.",
 )
 @_safe
@@ -335,7 +335,7 @@ def kb_get_document(id: str) -> dict[str, Any]:
 
 
 @mcp.tool(
-    name="kb.get_chunk",
+    name="kb_get_chunk",
     description="Return a specific chunk's text.",
 )
 @_safe
@@ -359,7 +359,7 @@ def kb_get_chunk(doc_id: str, chunk_id: str) -> dict[str, Any]:
 
 
 @mcp.tool(
-    name="kb.get_metadata",
+    name="kb_get_metadata",
     description="Return CSV + runtime fields for a document (no processed text).",
 )
 @_safe
@@ -378,7 +378,7 @@ def kb_get_metadata(id: str) -> dict[str, Any]:
 
 
 @mcp.tool(
-    name="kb.list_documents",
+    name="kb_list_documents",
     description="List/filter documents by status, tags, confidentiality, etc.",
 )
 @_safe
@@ -423,7 +423,7 @@ def kb_list_documents(
 
 
 @mcp.tool(
-    name="kb.list_tags",
+    name="kb_list_tags",
     description="List all tags with usage counts.",
 )
 @_safe
@@ -443,7 +443,7 @@ def kb_list_tags() -> dict[str, Any]:
 
 
 @mcp.tool(
-    name="kb.list_data_tables",
+    name="kb_list_data_tables",
     description=(
         "List Parquet-backed data tables in the knowledge base. Optionally "
         "filter by doc_id. Each entry includes table_name, source document, "
@@ -476,7 +476,7 @@ def kb_list_data_tables(doc_id: str | None = None) -> dict[str, Any]:
 
 
 @mcp.tool(
-    name="kb.read_data_table",
+    name="kb_read_data_table",
     description=(
         "Read a page of rows from a registered data table by table_name. "
         "Returns column names and row dicts. Default limit=50, max 1000."
@@ -503,7 +503,7 @@ def kb_read_data_table(
 
 
 @mcp.tool(
-    name="kb.query_data",
+    name="kb_query_data",
     description=(
         "Run a read-only SELECT/WITH SQL query over the registered Parquet "
         "data tables (each registered row exposed as a DuckDB view named by "
@@ -526,7 +526,7 @@ def kb_query_data(sql: str, limit: int = 1000) -> dict[str, Any]:
 
 
 @mcp.tool(
-    name="kb.suggest_metadata",
+    name="kb_suggest_metadata",
     description="Suggest document fields (heuristic).",
 )
 @_safe
@@ -571,7 +571,7 @@ def kb_suggest_metadata(id: str) -> dict[str, Any]:
 
 
 @mcp.tool(
-    name="kb.preview_metadata_update",
+    name="kb_preview_metadata_update",
     description="Preview a single-document field patch. Does not write.",
 )
 @_safe
@@ -580,7 +580,7 @@ def kb_preview_metadata_update(id: str, patch: dict[str, Any]) -> dict[str, Any]
 
 
 @mcp.tool(
-    name="kb.apply_metadata_update",
+    name="kb_apply_metadata_update",
     description="Apply a single-document field patch after user confirmation.",
 )
 @_safe
@@ -589,7 +589,7 @@ def kb_apply_metadata_update(id: str, patch: dict[str, Any]) -> dict[str, Any]:
 
 
 @mcp.tool(
-    name="kb.bulk_preview_metadata_update",
+    name="kb_bulk_preview_metadata_update",
     description="Preview a bulk document update operation.",
 )
 @_safe
@@ -601,7 +601,7 @@ def kb_bulk_preview_metadata_update(
 
 
 @mcp.tool(
-    name="kb.bulk_apply_metadata_update",
+    name="kb_bulk_apply_metadata_update",
     description="Apply a bulk document update operation after user confirmation.",
 )
 @_safe
@@ -618,7 +618,7 @@ from services import apps as apps_svc  # noqa: E402  (kept near related tools)
 
 
 @mcp.tool(
-    name="kb.create_app",
+    name="kb_create_app",
     description=(
         "Create or overwrite an HTML5 offline app under <kb_root>/apps/<slug>/. "
         "`files` maps relative POSIX paths (e.g. 'index.html', 'js/app.js') to "
@@ -637,7 +637,7 @@ def kb_create_app(
 
 
 @mcp.tool(
-    name="kb.list_apps",
+    name="kb_list_apps",
     description=(
         "List H5 offline apps stored under <kb_root>/apps/. Each entry includes "
         "the slug, local URL, on-disk path, file count and total size."
@@ -649,11 +649,11 @@ def kb_list_apps() -> dict[str, Any]:
 
 
 @mcp.tool(
-    name="kb.warmup",
+    name="kb_warmup",
     description=(
         "Start a background warmup job that pre-loads expensive components "
         "(Tantivy, LanceDB, jieba dictionary, and Ollama embeddings). Returns "
-        "immediately to avoid client timeout. Use kb.warmup_status to inspect "
+        "immediately to avoid client timeout. Use kb_warmup_status to inspect "
         "progress and stage results."
     ),
 )
@@ -672,7 +672,7 @@ def kb_warmup(refresh: bool = False) -> dict[str, Any]:
                 "status": "running",
                 "run_id": _WARMUP_STATE["run_id"],
                 "started_at_ms": _WARMUP_STATE["started_at_ms"],
-                "message": "Warmup is already running. Use kb.warmup_status.",
+                "message": "Warmup is already running. Use kb_warmup_status.",
             }
 
         if status == "succeeded" and not refresh:
@@ -716,12 +716,12 @@ def kb_warmup(refresh: bool = False) -> dict[str, Any]:
         "ok": True,
         "status": "started",
         "run_id": run_id,
-        "message": "Warmup started in background. Use kb.warmup_status for results.",
+        "message": "Warmup started in background. Use kb_warmup_status for results.",
     }
 
 
 @mcp.tool(
-    name="kb.warmup_status",
+    name="kb_warmup_status",
     description="Get status/result for the latest background warmup run.",
 )
 @_safe
@@ -801,27 +801,27 @@ def kb_run_pipeline(
 def _register_maintenance_tools() -> None:
     mcp.add_tool(
         kb_scan,
-        name="kb.scan",
+        name="kb_scan",
         description="Run tools.scan to refresh store/docs.csv.",
     )
     mcp.add_tool(
         kb_convert,
-        name="kb.convert",
+        name="kb_convert",
         description="Run tools.convert to refresh text/ and runtime metadata.",
     )
     mcp.add_tool(
         kb_ingest,
-        name="kb.ingest",
+        name="kb_ingest",
         description="Run tools.ingest to refresh full-text + vector indexes.",
     )
     mcp.add_tool(
         kb_rebuild,
-        name="kb.rebuild",
+        name="kb_rebuild",
         description="Run scan + convert + ingest sequentially.",
     )
     mcp.add_tool(
         kb_run_pipeline,
-        name="kb.run_pipeline",
+        name="kb_run_pipeline",
         description=(
             "Run scan -> convert -> ingest with optional force/only/no_vector options."
         ),

@@ -4,7 +4,7 @@ Agent-generated HTML5 offline apps live under ``<kb_root>/apps/<slug>/`` and
 are served by a loopback miniserve instance (see
 ``actions/start-miniserve.ps1`` or ``actions/start-pocketbase.ps1``). This module provides slug validation,
 safe file writing and a lightweight listing API used by the
-``kb.create_app`` / ``kb.list_apps`` MCP tools.
+``kb_create_app`` / ``kb_list_apps`` MCP tools.
 """
 
 from __future__ import annotations
@@ -74,7 +74,7 @@ def _default_apps_base_url(cfg: Config) -> str:
 
     By default, the local web server (PocketBase or miniserve) serves ``knowledge_base_root`` and apps live
     under ``<root>/<paths.apps_dir>`` (typically ``/apps``). Mirror that path
-    segment in generated links so kb.list_apps/kb.create_app URLs are directly
+    segment in generated links so kb_list_apps/kb_create_app URLs are directly
     clickable out of the box.
     """
     # 0.0.0.0 / :: 只是 bind 通配，不是可点击的 URL；落到聊天卡片里时换成 localhost。
@@ -190,7 +190,7 @@ def list_apps(cfg: Config) -> list[dict]:
             continue
         if not _SLUG_RE.match(entry.name):
             # Skip stray folders that don't match the slug convention; they
-            # were not created via kb.create_app and may belong to the user.
+            # were not created via kb_create_app and may belong to the user.
             continue
         files = [p for p in entry.rglob("*") if p.is_file()]
         size = sum(p.stat().st_size for p in files)

@@ -24,7 +24,7 @@ apps:
   #   本机 IP 访问（注意：PocketBase admin UI 也会一起暴露，按需配置防火墙）。
   host: "0.0.0.0"
   port: 8788
-  # Base URL advertised by kb.create_app / kb.list_apps in chat cards.
+  # Base URL advertised by kb_create_app / kb_list_apps in chat cards.
   # Leave null to derive from `http://{host}:{port}` automatically.
   base_url: null
 

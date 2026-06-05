@@ -4,13 +4,13 @@ param(
 )
 
 # Test warmup ("test-warmup"):
-# Runs the kb.warmup logic in a SEPARATE process from the MCP server, so the
+# Runs the kb_warmup logic in a SEPARATE process from the MCP server, so the
 # Python-level caches (jieba dict, Tantivy/LanceDB handles, OllamaEmbedder
 # singleton) do NOT carry over to the actual server. Use this script to:
 #   - observe per-stage startup cost / timings
 #   - load the Ollama model into memory (keep_alive) before launching MCP server
 #   - warm OS page cache for the index files
-# For real in-process warmup, call the kb.warmup MCP tool from the agent, or
+# For real in-process warmup, call the kb_warmup MCP tool from the agent, or
 # add startup warmup to server.main().
 
 $ErrorActionPreference = "Stop"
@@ -23,7 +23,7 @@ if (-not (Test-Path $pythonExe)) {
     throw "Python not found in .venv: $pythonExe"
 }
 
-# kb.warmup is only exposed as an MCP tool; invoke it in-process by
+# kb_warmup is only exposed as an MCP tool; invoke it in-process by
 # initializing server._CFG and calling kb_warmup() directly.
 #
 # NOTE: this runs in a *separate* process from the actual MCP server, so the

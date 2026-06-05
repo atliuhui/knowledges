@@ -1,7 +1,7 @@
 """Local CLI debug entry for the data lane (Parquet + DuckDB).
 
-Mirrors the MCP tools ``kb.list_data_tables`` / ``kb.read_data_table`` /
-``kb.query_data`` so the data tables registered by :mod:`services.data_pipeline`
+Mirrors the MCP tools ``kb_list_data_tables`` / ``kb_read_data_table`` /
+``kb_query_data`` so the data tables registered by :mod:`services.data_pipeline`
 can be inspected without starting the MCP server.
 
 Examples (PowerShell):

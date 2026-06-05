@@ -6,7 +6,7 @@ pipeline wrapper, or a scheduler — never write to docs.csv, text/,
 store/db.sqlite, or the search indexes at the same time.
 
 The wrapper that runs the three steps in sequence (actions/run-pipeline.ps1,
-kb.run_pipeline) does NOT take a lock itself; it just invokes the three
+kb_run_pipeline) does NOT take a lock itself; it just invokes the three
 independent steps, each of which acquires and releases the shared run lock.
 
 Usage:

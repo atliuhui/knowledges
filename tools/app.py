@@ -1,6 +1,6 @@
 """Local CLI debug entry for the H5 offline-app lane.
 
-Mirrors MCP tools ``kb.create_app`` / ``kb.list_apps`` so apps can be managed
+Mirrors MCP tools ``kb_create_app`` / ``kb_list_apps`` so apps can be managed
 without starting the MCP server.
 
 Examples (PowerShell):
