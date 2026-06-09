@@ -22,7 +22,7 @@ apps:
   # host:
   #   "127.0.0.1" 仅本机回环；"0.0.0.0" 监听所有网卡，局域网其它机器可通过
   #   本机 IP 访问（注意：PocketBase admin UI 也会一起暴露，按需配置防火墙）。
-  host: "0.0.0.0"
+  host: "127.0.0.1"
   port: 8788
   # Base URL advertised by kb_create_app / kb_list_apps in chat cards.
   # Leave null to derive from `http://{host}:{port}` automatically.
