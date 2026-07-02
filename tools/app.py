@@ -1,7 +1,7 @@
 """Local CLI debug entry for the H5 offline-app lane.
 
-Mirrors MCP tools ``kb_create_app`` / ``kb_list_apps`` so apps can be managed
-without starting the MCP server.
+Mirrors MCP tools ``kb_create_app`` / ``kb_list_apps`` / ``kb_delete_app`` so
+apps can be managed without starting the MCP server.
 
 Examples (PowerShell):
 
@@ -9,6 +9,8 @@ Examples (PowerShell):
     python -m tools.app create demo
     python -m tools.app create dashboard --files-json .\app-files.json --overwrite
     python -m tools.app url demo
+    python -m tools.app delete demo
+    python -m tools.app rebuild-index
 """
 
 from __future__ import annotations
@@ -165,8 +167,30 @@ def create_app(
     if not files:
         raise click.BadParameter("no files to write; provide --files-json or remove --no-default")
 
-    result = apps_svc.create_app(cfg, slug, files, overwrite=overwrite)
+    result = apps_svc.create_app(cfg, slug, files, overwrite=overwrite, title=title)
     _emit(result.to_dict())
+
+
+@main.command("delete")
+@click.argument("slug")
+@click.option("--yes", "-y", is_flag=True, help="Skip interactive confirmation.")
+@click.pass_context
+def delete_app(ctx: click.Context, slug: str, yes: bool) -> None:
+    """Delete an app directory and drop it from index.json."""
+    cfg = ctx.obj["cfg"]
+    slug = apps_svc.validate_slug(slug)
+    if not yes:
+        target = apps_svc.app_dir(cfg, slug)
+        click.confirm(f"Delete app {slug!r} at {target}?", abort=True)
+    _emit(apps_svc.delete_app(cfg, slug))
+
+
+@main.command("rebuild-index")
+@click.pass_context
+def rebuild_index(ctx: click.Context) -> None:
+    """Rescan apps_dir and regenerate index.json / index.html."""
+    cfg = ctx.obj["cfg"]
+    _emit(apps_svc.rebuild_index(cfg))
 
 
 if __name__ == "__main__":

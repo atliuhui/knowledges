@@ -623,7 +623,9 @@ from services import apps as apps_svc  # noqa: E402  (kept near related tools)
         "Create or overwrite an HTML5 offline app under <kb_root>/apps/<slug>/. "
         "`files` maps relative POSIX paths (e.g. 'index.html', 'js/app.js') to "
         "text content. Returns the local URL served by miniserve so the agent "
-        "can advertise a clickable link in chat. Slug must match [a-z0-9][a-z0-9-]*."
+        "can advertise a clickable link in chat. Slug must match [a-z0-9][a-z0-9-]*. "
+        "The app is registered in <kb_root>/apps/index.json and the shared "
+        "index.html landing page is refreshed."
     ),
 )
 @_safe
@@ -631,8 +633,9 @@ def kb_create_app(
     slug: str,
     files: dict[str, str],
     overwrite: bool = False,
+    title: str | None = None,
 ) -> dict[str, Any]:
-    result = apps_svc.create_app(_cfg(), slug, files, overwrite=overwrite)
+    result = apps_svc.create_app(_cfg(), slug, files, overwrite=overwrite, title=title)
     return result.to_dict()
 
 
@@ -646,6 +649,19 @@ def kb_create_app(
 @_safe
 def kb_list_apps() -> dict[str, Any]:
     return {"apps": apps_svc.list_apps(_cfg())}
+
+
+@mcp.tool(
+    name="kb_delete_app",
+    description=(
+        "Delete an H5 offline app under <kb_root>/apps/<slug>/ and remove its "
+        "entry from <kb_root>/apps/index.json. Missing directories / entries "
+        "are treated as a no-op so the call is idempotent."
+    ),
+)
+@_safe
+def kb_delete_app(slug: str) -> dict[str, Any]:
+    return apps_svc.delete_app(_cfg(), slug)
 
 
 @mcp.tool(
